@@ -1156,6 +1156,8 @@ B10K — полностью открытый проект. Если он вам 
 | **USDT (BEP-20)** | `0xD26Cb4FabB8436bcd2E5c0539a956032DA71C375` | Trust Wallet / MetaMask (+ BSC) |
 | **BTC** | `bc1qurndehxsac9mk4ax3fdrt7hx7zn9va7gf5lusz` | Trust Wallet / любой BTC-кошелёк |
 
+**Boosty (карты РФ):** https://boosty.to/base0000
+
 Одна из идей B10K — что денежные расчёты должны быть точными, без ошибок округления. Ваша поддержка делает этот подход доступнее 🙌
 
 ---
