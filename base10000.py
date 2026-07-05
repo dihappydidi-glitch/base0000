@@ -464,20 +464,30 @@ def isqrt(a: B10K) -> B10K:
 def parse(s: str) -> B10K:
     """
     Строка → B10K (переплетающаяся модель).
+    Для целых чисел:  left_half:right_half
+    Для дробных:      целая,левая_дробь:правая_дробь  (запятая = десятичный разделитель)
 
     BE = [L₀, R₀, L₁, R₁, ..., Lₙ₋₁, Rₙ₋₁]
     """
     s = s.strip()
-    while s and not (s[0].isdigit() or s[0] in '-.:'):
+    while s and not (s[0].isdigit() or s[0] in '-.,:'):
         s = s[1:]
     if not s:
         raise ValueError("пустая строка")
     sign = -1 if s.startswith('-') else 1
     if s.startswith('-'):
         s = s[1:]
+        s = s.strip()
     if not s:
-        raise ValueError("пустая строка")
+        raise ValueError("пустая строка после знака")
 
+    if ',' in s:
+        return _parse_frac(s, sign)
+    return _parse_int(s, sign)
+
+
+def _parse_int(s: str, sign: int) -> B10K:
+    """Парсинг целого B10K (без запятой)."""
     split_pos = s.find(':')
     if split_pos < 0:
         left_part = ""
@@ -511,15 +521,95 @@ def parse(s: str) -> B10K:
     return B10K(sign=sign, digs=le)
 
 
-def format_num(a: B10K) -> str:
+def _parse_frac(s: str, sign: int) -> B10K:
+    """
+    Парсинг дробного B10K.
+    Формат:  целая,левая_дробь:правая_дробь
+    или:     левая_дробь:целая,правая_дробь
+
+    Возвращает B10K, где дробные разряды объединены с целой частью
+    как единое LE-число. Для форматирования требуется отдельно хранить
+    число дробных пар — см. format_frac().
+
+    ВАЖНО: Обратное преобразование format_frac(parse_frac(s)) может
+    не совпадать в точности из-за разной группировки (несколько
+    представлений одной дроби). Для идентичного воспроизведения
+    нужно передавать число дробных пар.
+    """
+    # Определяем положение запятой
+    comma_pos = s.index(',')
+
+    left_colon = s.find(':')
+    if left_colon < 0:
+        raise ValueError("дробное число: отсутствует ':'")
+
+    left_str = s[:left_colon]
+    right_str = s[left_colon + 1:]
+
+    comma_in_left = comma_pos < left_colon
+
+    if comma_in_left:
+        int_part_str, left_frac_str = left_str.split(',', 1)
+        right_frac_str = right_str
+    else:
+        # запятая в правой половине
+        left_frac_str = left_str
+        right_whole_str, right_frac_str = right_str.split(',', 1)
+        int_part_str = right_whole_str
+
+    # Парсим целую часть
+    int_val = int(int_part_str) if int_part_str.strip() else 0
+    int_b10k = _from_int(int_val)
+
+    # Парсим дробные группы
+    left_groups_str = [g for g in left_frac_str.split('.') if g.strip()]
+    right_groups_str = [g for g in right_frac_str.split('.') if g.strip()]
+
+    # Выравниваем число групп
+    n = max(len(left_groups_str), len(right_groups_str))
+    # Дополняем до одинаковой длины (пустые слева = 0)
+    left_padded = (['0'] * (n - len(left_groups_str)) + left_groups_str
+                   if len(left_groups_str) < n else left_groups_str)
+    right_padded = (['0'] * (n - len(right_groups_str)) + right_groups_str
+                    if len(right_groups_str) < n else right_groups_str)
+
+    # Формируем BE: [L₀, R₀, L₁, R₁, ...]
+    be = []
+    for i in range(n):
+        be.append(int(left_padded[i].lstrip('0') or '0'))
+        be.append(int(right_padded[i].lstrip('0') or '0'))
+
+    # BE → LE (дробные разряды как младшие)
+    frac_le = list(reversed(be))
+    frac_le = _trim(frac_le) if frac_le else [0]
+
+    # Объединяем: целая часть (старшие разряды) + дробные (младшие)
+    # Сдвиг: целая часть * 10000^(2n)
+    combined = _shift_left_abs(int_b10k.digs, 2 * n)
+    combined = _add_abs(combined, frac_le)
+
+    return B10K(sign=sign, digs=combined)
+
+
+def format_num(a: B10K, frac_pairs: int = 0) -> str:
     """
     B10K → строка (переплетающаяся модель).
 
-    Разбивает big-endian цифры на пары (Lᵢ, Rᵢ).
+    По умолчанию (frac_pairs=0): целое число.
+    При frac_pairs > 0: выделяет указанное число дробных пар (2×frac_pairs
+    LE-элементов как младшие разряды) и форматирует с запятой.
     """
     if _is_zero(a):
         return "0000:0000"
 
+    if frac_pairs > 0:
+        return format_frac(a, frac_pairs)
+
+    return _format_int(a)
+
+
+def _format_int(a: B10K) -> str:
+    """B10K → строка (целое число)."""
     # Little-endian → Big-endian
     be = list(reversed(a.digs))
 
@@ -528,20 +618,111 @@ def format_num(a: B10K) -> str:
         be.insert(0, 0)
 
     # Чётные индексы → левая половина, нечётные → правая
-    left = [be[i] for i in range(0, len(be), 2)]
-    right = [be[i + 1] for i in range(0, len(be), 2)]
+    left = [f"{be[i]:04d}" for i in range(0, len(be), 2)]
+    right = [f"{be[i + 1]:04d}" for i in range(0, len(be), 2)]
 
-    left_strs = [f"{g:04d}" for g in left]
-    right_strs = [f"{g:04d}" for g in right]
-
-    s = ".".join(left_strs) + ":" + ".".join(right_strs)
+    s = ".".join(left) + ":" + ".".join(right)
     return f"-{s}" if a.sign == -1 else s
+
+
+# ═══════════════════════════════════════════════════════════
+#  ДРОБНЫЕ ЧИСЛА: ПАРСИНГ И ФОРМАТИРОВАНИЕ
+# ═══════════════════════════════════════════════════════════
+
+def parse_frac(s: str) -> B10K:
+    """
+    Парсинг дробного B10K (с запятой).
+    Возвращает B10K с объединёнными целой и дробной частями.
+    """
+    return parse(s)
+
+
+def _b10k_to_int(a: B10K) -> int:
+    """B10K → Python int (для внутреннего использования)."""
+    if _is_zero(a):
+        return 0
+    n = sum(d * (BASE ** i) for i, d in enumerate(a.digs))
+    return n * a.sign
+
+
+def format_frac(a: B10K, frac_pairs: int, comma_in_left: bool = True) -> str:
+    """
+    B10K → строка с дробной частью.
+
+    Алгоритм «с младших разрядов»: выделяет младшие 2×frac_pairs
+    LE-элементов как дробные, обрабатывает справа по 8 цифр.
+
+    Аргументы:
+      a — B10K, где объединены целая и дробная части (LE: старшие =
+           целая часть, младшие = дробная часть)
+      frac_pairs — число пар (L,R) в дробной части
+      comma_in_left — True (по умолчанию): запятая в левой половине
+                      False: запятая в правой половине
+
+    Примеры:
+      format_frac(a, 4)                → "6,708.3249.0892.1006:2039.9369.2752.1938"
+      format_frac(a, 4, comma_in_left=False)
+        → "708.3249.0892.1006:6,2039.9369.2752.1938"
+    """
+    if _is_zero(a):
+        return "0000:0000"
+
+    n_frac_le = 2 * frac_pairs  # число LE-элементов в дробной части
+    n_le = len(a.digs)
+
+    if n_frac_le >= n_le:
+        # Целая часть = 0, всё число — дробное
+        int_val = 0
+        pad = [0] * (n_frac_le - n_le)
+        frac_digs_rev = list(reversed(pad + a.digs))
+    else:
+        int_digs = a.digs[n_frac_le:]
+        frac_digs = a.digs[:n_frac_le]
+
+        int_val = _b10k_to_int(B10K(1, int_digs)) * a.sign
+        if int_val < 0:
+            int_val = -int_val
+
+        frac_digs_rev = list(reversed(frac_digs))
+
+    # BE → десятичные цифры дробной части: pad4, concat, lstrip('0')
+    frac_dec = ''.join(f"{g:04d}" for g in frac_digs_rev).lstrip('0')
+    if not frac_dec:
+        frac_dec = '0'
+
+    # Группируем десятичные цифры СПРАВА по 8 (алгоритм «с младших разрядов»)
+    chunks = []
+    i = len(frac_dec)
+    while i > 0:
+        start = max(0, i - 8)
+        chunks.append(frac_dec[start:i])
+        i = start
+
+    # Каждая 8-ка → (L, R)
+    left_groups = []
+    right_groups = []
+    for chunk in reversed(chunks):
+        chunk = chunk.zfill(8)
+        left_groups.append(chunk[:4])
+        right_groups.append(chunk[4:])
+
+    # Первая левая группа — без ведущих нулей
+    left_groups[0] = left_groups[0].lstrip('0') or '0'
+
+    left_str = '.'.join(left_groups)
+    right_str = '.'.join(right_groups)
+    sign_str = "-" if a.sign == -1 else ""
+
+    if comma_in_left:
+        return f"{sign_str}{int_val},{left_str}:{right_str}"
+    else:
+        return f"{sign_str}{left_str}:{int_val},{right_str}"
 
 
 # ─── короткие псевдонимы ──────────────────────────────────
 
 def B(s: str) -> B10K:
-    """parse('0005') → B10K."""
+    """parse('0000:0005') → B10K."""
     return parse(s)
 
 
