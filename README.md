@@ -1157,7 +1157,8 @@ B10K — полностью открытый проект. Если он вам 
 | **BTC** | `bc1qurndehxsac9mk4ax3fdrt7hx7zn9va7gf5lusz` | Trust Wallet / любой BTC-кошелёк |
 
 **Telegram:** https://t.me/base10000  
-**Boosty (карты РФ):** https://boosty.to/base0000
+**Boosty (карты РФ):** https://boosty.to/base0000  
+  Первый пост: https://boosty.to/base0000/posts/567d5fd0-2ad5-4e8d-ab38-1e8a11990a6d
 
 Одна из идей B10K — что денежные расчёты должны быть точными, без ошибок округления. Ваша поддержка делает этот подход доступнее 🙌
 
