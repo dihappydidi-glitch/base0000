@@ -735,12 +735,76 @@ def _(a: B10K) -> str:
 #  REPL-КАЛЬКУЛЯТОР
 # ═══════════════════════════════════════════════════════════
 
+def _input_with_history(prompt="", history=None):
+    """Ввод строки с поддержкой истории (стрелки вверх/вниз).
+
+    На Unix использует readline. На Windows — ручная обработка через msvcrt.
+    """
+    import sys as _sys
+
+    if history is None:
+        history = []
+    _pos = len(history)  # текущая позиция в истории (len = пустая строка)
+
+    # Unix — делегируем readline
+    if _sys.platform != 'win32':
+        return input(prompt)
+
+    # Windows — ручной ввод
+    try:
+        import msvcrt
+    except ImportError:
+        return input(prompt)
+
+    import os as _os
+    _buf = []
+    while True:
+        ch = msvcrt.getwch()
+        if ch == '\r':  # Enter
+            print()
+            line = ''.join(_buf)
+            return line
+        if ch == '\x03':  # Ctrl+C
+            raise KeyboardInterrupt
+        if ch == '\x04':  # Ctrl+D
+            raise EOFError
+        if ch == '\x08' or ch == '\x7f':  # Backspace
+            if _buf:
+                _buf.pop()
+                _sys.stdout.write('\b \b')
+                _sys.stdout.flush()
+        elif ch == '\xe0':  # Escape-последовательность (стрелки)
+            ch2 = msvcrt.getwch()
+            if ch2 == 'H':  # Вверх
+                if _pos > 0:
+                    _pos -= 1
+                    _buf = list(history[_pos])
+            elif ch2 == 'P':  # Вниз
+                if _pos < len(history):
+                    _pos += 1
+                if _pos == len(history):
+                    _buf = []
+                else:
+                    _buf = list(history[_pos])
+            elif ch2 == 'K':  # Влево
+                continue  # упрощённо: игнорируем
+            elif ch2 == 'M':  # Вправо
+                continue
+            # перерисовываем строку
+            _sys.stdout.write('\r' + prompt + ' ' * 120 + '\r' + prompt)
+            _sys.stdout.write(''.join(_buf))
+            _sys.stdout.flush()
+        elif ch == '\x1b':  # ESC
+            continue
+        else:
+            _buf.append(ch)
+            _sys.stdout.write(ch)
+            _sys.stdout.flush()
+
+
 def _repl():
     """Интерактивный калькулятор."""
-    try:
-        import readline  # история, стрелки влево/вправо (UNIX)
-    except ImportError:
-        pass  # Windows — без readline, но работает
+    _history = []
     print("=== base-10000 REPL ===")
     print("Вводите выражения вида:  0000:0005 + 0000:0003")
     print("Поддерживается: + - * / % ** //")
@@ -854,7 +918,7 @@ def _repl():
     try:
         while True:
             try:
-                line = input("b10k> ").strip()
+                line = _input_with_history("b10k> ", _history).strip()
             except EOFError:
                 print()
                 break
@@ -862,6 +926,8 @@ def _repl():
                 continue
             if line in ('.exit', '.quit', 'exit', 'quit'):
                 break
+
+            _history.append(line)
 
             try:
                 # чистим BOM и непечатные символы (PowerShell)
