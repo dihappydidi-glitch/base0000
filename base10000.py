@@ -143,7 +143,7 @@ def _trim(digs: List[int]) -> List[int]:
 
 
 def _is_zero(a: B10K) -> bool:
-    return len(a.digs) == 1 and a.digs[0] == 0
+    return all(d == 0 for d in a.digs)
 
 
 def _cmp_abs(a: List[int], b: List[int]) -> int:
@@ -569,6 +569,45 @@ def isqrt(a: B10K) -> B10K:
     return x
 
 
+def sqrt_b10k(a: B10K, pairs: int = 0) -> B10K:
+    """
+    Квадратный корень с точностью до pairs дробных пар.
+
+    pairs=0 → целочисленный sqrt (через isqrt).
+    pairs>0 → сдвиг A на 4·pairs LE-групп влево, isqrt, отрезание
+              дробной части.
+
+    Пример: sqrt_b10k(parse('2'), 4) → sqrt(2) с 4 дробными парами.
+    """
+    if a.sign < 0:
+        raise ValueError("sqrt из отрицательного числа")
+    if _is_zero(a):
+        if pairs:
+            return B10K(sign=1, digs=[0], frac_pairs=pairs)
+        return _zero()
+    if pairs == 0:
+        return isqrt(a)
+
+    # Сдвигаем A на 4·pairs LE-групп для получения точности pairs пар.
+    # isqrt(A·BASE^(4p)) ≈ sqrt(A)·BASE^(2p) — достаточно для 2p
+    # LE-групп дробной части (= p пар).
+    shifted = B10K(sign=1, digs=[0] * (4 * pairs) + a.digs)
+
+    sqrt_int = isqrt(shifted)
+
+    # Первые 2·pairs LE-групп — дробная часть (младшие разряды)
+    frac_digs = sqrt_int.digs[:2 * pairs]
+    int_digs = sqrt_int.digs[2 * pairs:]
+
+    # Дополняем, если не хватило
+    if len(frac_digs) < 2 * pairs:
+        pad = [0] * (2 * pairs - len(frac_digs))
+        frac_digs = pad + frac_digs
+
+    # B10K: [дробь LE... | целая LE...], младшие → дробь
+    return B10K(sign=1, digs=frac_digs + int_digs, frac_pairs=pairs)
+
+
 # ═══════════════════════════════════════════════════════════
 #  ПАРСИНГ И ФОРМАТИРОВАНИЕ
 # ═══════════════════════════════════════════════════════════
@@ -636,70 +675,117 @@ def _parse_int(s: str, sign: int) -> B10K:
 def _parse_frac(s: str, sign: int) -> B10K:
     """
     Парсинг дробного B10K.
-    Формат:  целая,левая_дробь:правая_дробь
-    или:     левая_дробь:целая,правая_дробь
+
+    Новый формат: int_part, L0.R0.L1.R1.L2.R2...
+      — целая часть десятичным числом, дробная — чередование
+        левых и правых 4-циферных групп
+      Пример: "3,1415.9265.3589.7932"
+
+    Старый формат (с ':') — для обратной совместимости:
+      целая,дробь_левая:дробь_правая
+      или
+      дробь_левая:целая,дробь_правая
 
     Возвращает B10K, где дробные разряды объединены с целой частью
     как единое LE-число. Для форматирования требуется отдельно хранить
     число дробных пар — см. format_frac().
-
-    ВАЖНО: Обратное преобразование format_frac(parse_frac(s)) может
-    не совпадать в точности из-за разной группировки (несколько
-    представлений одной дроби). Для идентичного воспроизведения
-    нужно передавать число дробных пар.
     """
-    # Определяем положение запятой
-    comma_pos = s.index(',')
+    # Если есть ':' — старый формат
+    if ':' in s:
+        colon_pos = s.find(':')
+        comma_pos = s.index(',')
 
-    left_colon = s.find(':')
-    if left_colon < 0:
-        raise ValueError("дробное число: отсутствует ':'")
+        left_str = s[:colon_pos]
+        right_str = s[colon_pos + 1:]
 
-    left_str = s[:left_colon]
-    right_str = s[left_colon + 1:]
+        comma_in_left = comma_pos < colon_pos
 
-    comma_in_left = comma_pos < left_colon
+        if comma_in_left:
+            # Старый формат: целая,дробь_левая:дробь_правая
+            int_part_str, left_frac_str = left_str.split(',', 1)
+            right_frac_str = right_str
+            int_val = int(int_part_str) if int_part_str.strip() else 0
+            int_b10k = _from_int(int_val)
+            left_groups_str = [g for g in left_frac_str.split('.') if g.strip()]
+            right_groups_str = [g for g in right_frac_str.split('.') if g.strip()]
+            n = max(len(left_groups_str), len(right_groups_str))
+            left_padded = (['0'] * (n - len(left_groups_str)) + left_groups_str
+                           if len(left_groups_str) < n else left_groups_str)
+            right_padded = (['0'] * (n - len(right_groups_str)) + right_groups_str
+                            if len(right_groups_str) < n else right_groups_str)
+            be = []
+            for i in range(n):
+                be.append(int(left_padded[i].lstrip('0') or '0'))
+                be.append(int(right_padded[i].lstrip('0') or '0'))
+            frac_le = list(reversed(be))
+            frac_le = _trim(frac_le) if frac_le else [0]
+            combined = _shift_left_abs(int_b10k.digs, 2 * n)
+            combined = _add_abs(combined, frac_le)
+            return B10K(sign=sign, digs=combined)
 
-    if comma_in_left:
-        int_part_str, left_frac_str = left_str.split(',', 1)
-        right_frac_str = right_str
-    else:
-        # запятая в правой половине
-        left_frac_str = left_str
+        # Старый формат: дробь_левая:целая,дробь_правая (запятая справа)
         right_whole_str, right_frac_str = right_str.split(',', 1)
+        left_frac_str = left_str
         int_part_str = right_whole_str
 
-    # Парсим целую часть
-    int_val = int(int_part_str) if int_part_str.strip() else 0
+        int_val = int(int_part_str) if int_part_str.strip() else 0
+        int_b10k = _from_int(int_val)
+
+        left_groups_str = [g for g in left_frac_str.split('.') if g.strip()]
+        right_groups_str = [g for g in right_frac_str.split('.') if g.strip()]
+
+        n = max(len(left_groups_str), len(right_groups_str))
+        left_padded = (['0'] * (n - len(left_groups_str)) + left_groups_str
+                       if len(left_groups_str) < n else left_groups_str)
+        right_padded = (['0'] * (n - len(right_groups_str)) + right_groups_str
+                        if len(right_groups_str) < n else right_groups_str)
+
+        be = []
+        for i in range(n):
+            be.append(int(left_padded[i].lstrip('0') or '0'))
+            be.append(int(right_padded[i].lstrip('0') or '0'))
+
+        frac_le = list(reversed(be))
+        frac_le = _trim(frac_le) if frac_le else [0]
+        combined = _shift_left_abs(int_b10k.digs, 2 * n)
+        combined = _add_abs(combined, frac_le)
+        return B10K(sign=sign, digs=combined)
+
+    # НОВЫЙ ФОРМАТ: int_part, L0.R0.L1.R1.L2.R2...
+    comma_pos = s.index(',')
+    int_part_str = s[:comma_pos].strip()
+    frac_str = s[comma_pos + 1:].strip()
+
+    # Целая часть
+    int_val = int(int_part_str) if int_part_str else 0
     int_b10k = _from_int(int_val)
 
-    # Парсим дробные группы
-    left_groups_str = [g for g in left_frac_str.split('.') if g.strip()]
-    right_groups_str = [g for g in right_frac_str.split('.') if g.strip()]
+    # Дробная часть: чередование L0, R0, L1, R1, ...
+    groups = [g for g in frac_str.split('.') if g.strip()]
+    if not groups:
+        return int_b10k
 
-    # Выравниваем число групп
+    # Чётные индексы → L, нечётные → R
+    # L₀, R₀, L₁, R₁, ...
+    n_pairs = (len(groups) + 1) // 2  # округление вверх
+    left_groups_str = [groups[i] for i in range(0, len(groups), 2)]
+    right_groups_str = [groups[i] for i in range(1, len(groups), 2)]
+
     n = max(len(left_groups_str), len(right_groups_str))
-    # Дополняем до одинаковой длины (пустые слева = 0)
     left_padded = (['0'] * (n - len(left_groups_str)) + left_groups_str
                    if len(left_groups_str) < n else left_groups_str)
     right_padded = (['0'] * (n - len(right_groups_str)) + right_groups_str
                     if len(right_groups_str) < n else right_groups_str)
 
-    # Формируем BE: [L₀, R₀, L₁, R₁, ...]
     be = []
     for i in range(n):
         be.append(int(left_padded[i].lstrip('0') or '0'))
         be.append(int(right_padded[i].lstrip('0') or '0'))
 
-    # BE → LE (дробные разряды как младшие)
     frac_le = list(reversed(be))
     frac_le = _trim(frac_le) if frac_le else [0]
-
-    # Объединяем: целая часть (старшие разряды) + дробные (младшие)
-    # Сдвиг: целая часть * 10000^(2n)
     combined = _shift_left_abs(int_b10k.digs, 2 * n)
     combined = _add_abs(combined, frac_le)
-
     return B10K(sign=sign, digs=combined)
 
 
@@ -711,13 +797,16 @@ def format_num(a: B10K, frac_pairs: int = 0) -> str:
     используется a.frac_pairs.
     При frac_pairs > 0: выделяет указанное число дробных пар (2×frac_pairs
     LE-элементов как младшие разряды) и форматирует с запятой.
-    """
-    if _is_zero(a):
-        return "0000:0000"
 
+    Формат (целое): 0000:0003
+    Формат (дробь): int_part, L0.R0.L1.R1...
+      Пример: 3,1415.9265.3589.7932.3846.2643
+    """
     fp = frac_pairs or a.frac_pairs
     if fp > 0:
         return format_frac(a, fp)
+    if _is_zero(a):
+        return "0000:0000"
 
     return _format_int(a)
 
@@ -746,9 +835,24 @@ def _format_int(a: B10K) -> str:
 def parse_frac(s: str) -> B10K:
     """
     Парсинг дробного B10K (с запятой).
-    Возвращает B10K с объединёнными целой и дробной частями.
+    Возвращает B10K с frac_pairs, вычисленным из числа точек в дробной части.
+
+    Формат: int_part, L0.R0.L1.R1.L2.R2...
     """
-    return parse(s)
+    b = parse(s)
+    # Вычисляем число дробных пар: (число точек после запятой + 1) // 2
+    comma_pos = s.index(',')
+    after_comma = s[comma_pos + 1:]
+    if '.' in after_comma:
+        n_dots = after_comma.count('.')
+        n_groups = n_dots + 1  # групп после запятой
+        b.frac_pairs = (n_groups + 1) // 2  # с округлением вверх
+    elif after_comma.strip() == '0':
+        # "0,0" — ноль с одной парой
+        b.frac_pairs = 1
+    else:
+        b.frac_pairs = 0
+    return b
 
 
 def to_int(a: B10K) -> int:
@@ -814,45 +918,37 @@ def to_dec(a: B10K, frac_pairs: Optional[int] = None) -> str:
 _b10k_to_int = to_int  # обратная совместимость
 
 
-def format_frac(a: B10K, frac_pairs: int, comma_in_left: bool = True) -> str:
+def format_frac(a: B10K, frac_pairs: int) -> str:
     """
-    B10K → строка с дробной частью.
+    B10K → строка с дробной частью (чередование L0.R0.L1.R1...).
 
-    Алгоритм «с младших разрядов»: выделяет младшие 2×frac_pairs
-    LE-элементов как дробные, обрабатывает справа по 8 цифр.
-
-    Аргументы:
-      a — B10K, где объединены целая и дробная части (LE: старшие =
-           целая часть, младшие = дробная часть)
-      frac_pairs — число пар (L,R) в дробной части
-      comma_in_left — True (по умолчанию): запятая в левой половине
-                      False: запятая в правой половине
+    Целая часть — десятичное число, дробная — чередование левых и правых
+    4-циферных групп: каждая пара (L,R) = 8 десятичных цифр.
 
     Примеры:
-      format_frac(a, 4)                → "6,708.3249.0892.1006:2039.9369.2752.1938"
-      format_frac(a, 4, comma_in_left=False)
-        → "708.3249.0892.1006:6,2039.9369.2752.1938"
+      format_frac(pi, 6) → "3,1415.9265.3589.7932.3846.2643"
+      format_frac(a, 4)  → "6,7082.2039.0892.1006"
     """
     if _is_zero(a):
-        return "0000:0000"
+        return "0,0"
 
     n_frac_le = 2 * frac_pairs  # число LE-элементов в дробной части
     n_le = len(a.digs)
 
     if n_frac_le >= n_le:
-        # Целая часть = 0, всё число — дробное
-        int_format = "0"
+        # Целая часть = 0
+        int_str = "0"
         pad = [0] * (n_frac_le - n_le)
         frac_digs_rev = list(reversed(pad + a.digs))
     else:
         int_digs = a.digs[n_frac_le:]
         frac_digs = a.digs[:n_frac_le]
 
-        # Целая часть: B10K-группы (BE, 4 цифры, через точку)
-        int_be = list(reversed(int_digs))
-        int_format = '.'.join(f"{g:04d}" for g in int_be)
-        if int_format == "0000":
-            int_format = "0"
+        # Целая часть — десятичное число
+        int_val = 0
+        for i, g in enumerate(int_digs):
+            int_val += g * (BASE ** i)
+        int_str = str(int_val)
 
         frac_digs_rev = list(reversed(frac_digs))
 
@@ -869,25 +965,19 @@ def format_frac(a: B10K, frac_pairs: int, comma_in_left: bool = True) -> str:
         chunks.append(frac_dec[start:i])
         i = start
 
-    # Каждая 8-ка → (L, R)
-    left_groups = []
-    right_groups = []
+    # Каждая 8-ка → (L, R), выводим как L0.R0.L1.R1...
+    pairs = []
     for chunk in reversed(chunks):
         chunk = chunk.zfill(8)
-        left_groups.append(chunk[:4])
-        right_groups.append(chunk[4:])
+        pairs.append(chunk[:4])  # L
+        pairs.append(chunk[4:])  # R
 
-    # Первая левая группа — без ведущих нулей
-    left_groups[0] = left_groups[0].lstrip('0') or '0'
+    # Первая группа — без ведущих нулей
+    if pairs:
+        pairs[0] = pairs[0].lstrip('0') or '0'
 
-    left_str = '.'.join(left_groups)
-    right_str = '.'.join(right_groups)
     sign_str = "-" if a.sign == -1 else ""
-
-    if comma_in_left:
-        return f"{sign_str}{int_format},{left_str}:{right_str}"
-    else:
-        return f"{sign_str}{left_str}:{int_format},{right_str}"
+    return f"{sign_str}{int_str},{'.'.join(pairs)}"
 
 
 # ─── короткие псевдонимы ──────────────────────────────────
@@ -1051,6 +1141,14 @@ def _repl():
                 result = lcm(args[0], args[1])
             elif func_name == 'isqrt':
                 result = isqrt(args[0])
+            elif func_name == 'sqrt':
+                if len(args) == 1:
+                    result = sqrt_b10k(args[0])
+                elif len(args) == 2:
+                    result = sqrt_b10k(args[0], to_int(args[1]))
+                else:
+                    print("  sqrt(x [, pairs]) — квадратный корень с pairs дробными парами")
+                    return None
             elif func_name in ('tod', 'to_dec'):
                 # tod(x) или tod(x, pairs)
                 if len(args) == 1:
