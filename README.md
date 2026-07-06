@@ -119,7 +119,7 @@ The `digs` array (little-endian — index 0 = least significant group) stores gr
 2. Elements form **(R, L) pairs**. From each pair collect:
    — first element → R-group (right half)
    — second element → L-group (left half)
-3. The most significant (leftmost in display) pair may be incomplete — an R-group without a corresponding L-group. This happens when the original decimal digits didn't fill the last 8-digit chunk completely.
+3. The most significant 4-digit group may belong to the **right half** alone (no corresponding L-group). This happens when the original number's most significant decimal digits — 1 to 4 digits, not all zero — form a partial 8-digit chunk: they are padded with leading zeros to 4 digits and become the MSB R-group. The matching L-group would be `0000`, which is handled by left-half padding (step 4).
 4. If R-groups outnumber L-groups, `"0000"` groups are **prepended** to the left half at the MSB end to equalize counts
 5. Each group is formatted as a 4-digit zero-padded string
 6. Result: `L₀.L₁… : R₀.R₁…`
