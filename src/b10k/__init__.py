@@ -812,19 +812,19 @@ def format_num(a: B10K, frac_pairs: int = 0) -> str:
 
 
 def _format_int(a: B10K) -> str:
-    """B10K → строка (целое число)."""
-    # Little-endian → Big-endian
-    be = list(reversed(a.digs))
-
-    # Дополняем до чётного числа групп
-    if len(be) % 2 != 0:
-        be.insert(0, 0)
-
-    # Чётные индексы → левая половина, нечётные → правая
-    left = [f"{be[i]:04d}" for i in range(0, len(be), 2)]
-    right = [f"{be[i + 1]:04d}" for i in range(0, len(be), 2)]
-
-    s = ".".join(left) + ":" + ".".join(right)
+    """
+    B10K → строка: R₀:L₀.R₁:L₁...
+    Пары от младших разрядов (LSB) к старшим.
+    Каждая пара: правый 4-разряд → : → левый 4-разряд.
+    """
+    pairs = []
+    for i in range(0, len(a.digs), 2):
+        r = a.digs[i]
+        l = a.digs[i + 1] if i + 1 < len(a.digs) else 0
+        pairs.append(f"{r:04d}:{l:04d}")
+    if not pairs:
+        pairs.append("0000:0000")
+    s = '.'.join(pairs)
     return f"-{s}" if a.sign == -1 else s
 
 
@@ -837,7 +837,8 @@ def parse_frac(s: str) -> B10K:
     Парсинг дробного B10K (с запятой).
     Возвращает B10K с frac_pairs, вычисленным из числа точек в дробной части.
 
-    Формат: int_part, L0.R0.L1.R1.L2.R2...
+    Формат: R₀:L₀.R₁:L₁...,Rₖ:Lₖ...
+    Пары от младших к старшим. Запятая между дробной и целой частью.
     """
     b = parse(s)
     # Вычисляем число дробных пар: (число точек после запятой + 1) // 2
@@ -920,64 +921,45 @@ _b10k_to_int = to_int  # обратная совместимость
 
 def format_frac(a: B10K, frac_pairs: int) -> str:
     """
-    B10K → строка с дробной частью (чередование L0.R0.L1.R1...).
+    B10K → строка с дробной частью.
 
-    Целая часть — десятичное число, дробная — чередование левых и правых
-    4-циферных групп: каждая пара (L,R) = 8 десятичных цифр.
+    Формат: R₀:L₀.R₁:L₁...,Rₖ:Lₖ...
+    Дробные пары от младших (LSB) к старшим, затем запятая,
+    затем целая часть как пары R:L.
 
-    Примеры:
-      format_frac(pi, 6) → "3,1415.9265.3589.7932.3846.2643"
-      format_frac(a, 4)  → "6,7082.2039.0892.1006"
+    Каждая пара: правый 4-разряд (R) → : → левый 4-разряд (L).
     """
     if _is_zero(a):
         return "0,0"
 
     n_frac_le = 2 * frac_pairs  # число LE-элементов в дробной части
-    n_le = len(a.digs)
+    digs = a.digs
 
-    if n_frac_le >= n_le:
-        # Целая часть = 0
-        int_str = "0"
-        pad = [0] * (n_frac_le - n_le)
-        frac_digs_rev = list(reversed(pad + a.digs))
-    else:
-        int_digs = a.digs[n_frac_le:]
-        frac_digs = a.digs[:n_frac_le]
+    # Дополняем нулями, если число короче дробной части
+    if n_frac_le > len(digs):
+        digs = list(digs) + [0] * (n_frac_le - len(digs))
 
-        # Целая часть — десятичное число
-        int_val = 0
-        for i, g in enumerate(int_digs):
-            int_val += g * (BASE ** i)
-        int_str = str(int_val)
+    # Дробные пары: в LE хранятся от MSB-пары к LSB-паре
+    # (из-за переворота интерливинга). Идём с конца → от LSB к MSB.
+    frac_parts = []
+    for i in range(n_frac_le - 2, -1, -2):
+        r = digs[i]
+        l = digs[i + 1]
+        frac_parts.append(f"{r:04d}:{l:04d}")
 
-        frac_digs_rev = list(reversed(frac_digs))
-
-    # BE → десятичные цифры дробной части: pad4, concat, lstrip('0')
-    frac_dec = ''.join(f"{g:04d}" for g in frac_digs_rev).lstrip('0')
-    if not frac_dec:
-        frac_dec = '0'
-
-    # Группируем десятичные цифры СПРАВА по 8 (алгоритм «с младших разрядов»)
-    chunks = []
-    i = len(frac_dec)
-    while i > 0:
-        start = max(0, i - 8)
-        chunks.append(frac_dec[start:i])
-        i = start
-
-    # Каждая 8-ка → (L, R), выводим как L0.R0.L1.R1...
-    pairs = []
-    for chunk in reversed(chunks):
-        chunk = chunk.zfill(8)
-        pairs.append(chunk[:4])  # L
-        pairs.append(chunk[4:])  # R
-
-    # Первая группа — без ведущих нулей
-    if pairs:
-        pairs[0] = pairs[0].lstrip('0') or '0'
+    # Целые пары: в LE от LSB к MSB — берём подряд от n_frac_le
+    int_parts = []
+    for i in range(n_frac_le, len(digs), 2):
+        r = digs[i]
+        l = digs[i + 1] if i + 1 < len(digs) else 0
+        int_parts.append(f"{r:04d}:{l:04d}")
 
     sign_str = "-" if a.sign == -1 else ""
-    return f"{sign_str}{int_str},{'.'.join(pairs)}"
+    if not int_parts:
+        return f"{sign_str}0,{'.'.join(frac_parts)}"
+    if not frac_parts:
+        return f"{sign_str}{'.'.join(int_parts)}"
+    return f"{sign_str}{'.'.join(frac_parts)},{'.'.join(int_parts)}"
 
 
 # ─── короткие псевдонимы ──────────────────────────────────
