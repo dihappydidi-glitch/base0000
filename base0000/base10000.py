@@ -1143,6 +1143,9 @@ def _repl():
     print("  e(pairs) — Эйлерово число e (pairs = число пар)")
     print("  fib(n) — число Фибоначчи F(n)")
     print("  sin(x, pairs) — синус (радианы); cos(x, pairs) — косинус")
+    print("  tan(x, pairs) — тангенс; atan(x, pairs) — арктангенс")
+    print("  exp(x, pairs) — e^x; ln(x, pairs) — натуральный логарифм")
+    print("  log(x, pairs) — десятичный логарифм")
     print("Переменные: обозначаются буквами, сохраняются через =")
     print("  x = 0000:0100")
     print("  x * x")
@@ -1310,6 +1313,46 @@ def _repl():
                     result = cos_b10k(args[0], to_int(args[1]))
                 else:
                     print("  cos(x [, pairs]) — косинус x радиан с pairs парами")
+                    return None
+            elif func_name == 'tan':
+                if len(args) == 1:
+                    result = tan_b10k(args[0])
+                elif len(args) == 2:
+                    result = tan_b10k(args[0], to_int(args[1]))
+                else:
+                    print("  tan(x [, pairs]) — тангенс x с pairs парами")
+                    return None
+            elif func_name == 'atan':
+                if len(args) == 1:
+                    result = atan_b10k(args[0])
+                elif len(args) == 2:
+                    result = atan_b10k(args[0], to_int(args[1]))
+                else:
+                    print("  atan(x [, pairs]) — арктангенс с pairs парами")
+                    return None
+            elif func_name == 'exp':
+                if len(args) == 1:
+                    result = exp_b10k(args[0])
+                elif len(args) == 2:
+                    result = exp_b10k(args[0], to_int(args[1]))
+                else:
+                    print("  exp(x [, pairs]) — e^x с pairs парами")
+                    return None
+            elif func_name == 'ln':
+                if len(args) == 1:
+                    result = ln_b10k(args[0])
+                elif len(args) == 2:
+                    result = ln_b10k(args[0], to_int(args[1]))
+                else:
+                    print("  ln(x [, pairs]) — натуральный логарифм")
+                    return None
+            elif func_name == 'log':
+                if len(args) == 1:
+                    result = log10_b10k(args[0])
+                elif len(args) == 2:
+                    result = log10_b10k(args[0], to_int(args[1]))
+                else:
+                    print("  log(x [, pairs]) — десятичный логарифм")
                     return None
             else:
                 print(f"  неизвестная функция: {func_name}")
@@ -1637,6 +1680,209 @@ def cos_b10k(x: B10K, pairs: int = 10) -> B10K:
     if not result.digs:
         result = B10K(sign=1, digs=[0], frac_pairs=pairs)
     return result
+
+
+def tan_b10k(x: B10K, pairs: int = 10) -> B10K:
+    """tan(x) = sin(x)/cos(x) с точностью pairs дробных пар."""
+    s = sin_b10k(x, pairs + 1)
+    c = cos_b10k(x, pairs + 1)
+    if _is_zero(c):
+        raise ValueError("tan(x): асимптота (cos ≈ 0)")
+    t = div(s, c)
+    # отбросить запасную пару
+    return B10K(sign=t.sign, digs=_shift_right_abs(t.digs, 2), frac_pairs=pairs)
+
+
+def atan_b10k(x: B10K, pairs: int = 10) -> B10K:
+    """arctg(x) через ряд Тейлора с S-масштабированием.
+
+    atan(x) = x − x³/3 + x⁵/5 − x⁷/7 + …
+    Для |x| > 1: atan(x) = π/2 − atan(1/x)
+    """
+    if x.sign < 0:
+        return neg(atan_b10k(neg(x), pairs))
+    one = _from_int(1)
+    if _cmp_abs(x.digs, one.digs) > 0:  # |x| > 1
+        inv = div(one, x)
+        half_pi = div(pi_b10k(pairs + 1), _from_int(2))
+        a = atan_b10k(inv, pairs + 1)
+        r = sub(half_pi, a)
+        return B10K(sign=r.sign, digs=_shift_right_abs(r.digs, 2), frac_pairs=pairs)
+
+    S = pow_b10k(_from_int(BASE), _from_int(2 * (pairs + 1)))
+    fp = x.frac_pairs if hasattr(x, 'frac_pairs') and x.frac_pairs else 0
+    x_times_S = mul(x, S)
+    if fp > 0:
+        x_scaled = B10K(sign=x.sign, digs=_shift_right_abs(x_times_S.digs, 2 * fp))
+    else:
+        x_scaled = x_times_S
+    x_sq = mul(x, x)
+    if _is_zero(x_scaled):
+        return B10K(sign=1, digs=[0], frac_pairs=pairs)
+
+    result = _zero()
+    term = x_scaled  # k=0: x·S
+    k = 0
+    while True:
+        result = add(result, term) if k % 2 == 0 else sub(result, term)
+        temp = mul(term, x_sq)
+        if _is_zero(temp):
+            break
+        temp = B10K(sign=temp.sign, digs=_mul_small(temp.digs, 2 * k + 1))
+        temp = B10K(sign=temp.sign, digs=_div_small_abs(temp.digs, 2 * k + 3))
+        temp = neg(temp)
+        if fp > 0:
+            temp = B10K(sign=temp.sign, digs=_shift_right_abs(temp.digs, 4 * fp))
+        term = temp
+        k += 1
+        if _is_zero(term):
+            break
+
+    result = B10K(sign=result.sign, digs=_shift_right_abs(result.digs, 2), frac_pairs=pairs)
+    if not result.digs:
+        result = B10K(sign=1, digs=[0], frac_pairs=pairs)
+    return result
+
+
+def exp_b10k(x: B10K, pairs: int = 10) -> B10K:
+    """e^x через ряд Тейлора с S-масштабированием.
+
+    e^x = Σ x^k/k!  (k = 0…∞)
+    """
+    S = pow_b10k(_from_int(BASE), _from_int(2 * (pairs + 1)))
+    fp = x.frac_pairs if hasattr(x, 'frac_pairs') and x.frac_pairs else 0
+    x_times_S = mul(x, S)
+    if fp > 0:
+        x_scaled = B10K(sign=x.sign, digs=_shift_right_abs(x_times_S.digs, 2 * fp))
+    else:
+        x_scaled = x_times_S
+
+    result = S  # k=0: 1·S
+    term = S    # term_0 = 1·S
+    k = 1
+    while True:
+        # term_k = term_{k-1} · x / k
+        temp = mul(term, x_scaled)
+        if _is_zero(temp):
+            break
+        temp = B10K(sign=temp.sign, digs=_div_small_abs(temp.digs, k))
+        # temp сейчас = S · x^k/k!  (если x целый)
+        # Если x дробный, temp = S · x^k/k! · BASE^(2·fp·(k-1))
+        if fp > 0 and k > 1:
+            temp = B10K(sign=temp.sign, digs=_shift_right_abs(temp.digs, 2 * fp * (k - 1)))
+        term = temp
+        result = add(result, term)
+        k += 1
+        if _is_zero(term):
+            break
+
+    result = B10K(sign=result.sign, digs=_shift_right_abs(result.digs, 2), frac_pairs=pairs)
+    if not result.digs:
+        result = B10K(sign=1, digs=[0], frac_pairs=pairs)
+    return result
+
+
+def ln_b10k(x: B10K, pairs: int = 10) -> B10K:
+    """ln(x) — натуральный логарифм.
+
+    Для x ≤ 0: ValueError.
+    Для x ≈ 1: ряд ln(1+t) = t − t²/2 + t³/3 − t⁴/4 + …  (t = x−1)
+    В остальных случаях: ln(x) = ln(x/10^k) + k·ln(10) с редукцией.
+    """
+    if x.sign < 0 or _is_zero(x):
+        raise ValueError("ln(x): x должно быть > 0")
+    one = _from_int(1)
+    if _cmp_abs(x.digs, one.digs) == 0 and (not hasattr(x, 'frac_pairs') or x.frac_pairs == 0):
+        return _zero()  # ln(1) = 0
+
+    # Редукция: находим k такое, что 1 ≤ x/10^k < 10
+    # В B10K-формате: x = m·10^{4·k} где m = x>>(2k) (k пар)
+    # Упрощённо: через десятичную длину
+    s = to_dec(x) if x.frac_pairs == 0 else to_dec(x, x.frac_pairs)
+    if '.' in s:
+        s_int = s.split('.')[0] if s.startswith('-') else s.split('.')[0]
+    else:
+        s_int = s
+    s_int = s_int.lstrip('-')
+    # Число десятичных разрядов целой части
+    int_digits = len(s_int) if s_int != '0' else 0
+
+    # ln(10) ≈ 2.3025850929940456840
+    ln10 = parse_frac("2,3025.8509.2994.0456.8401")
+    if int_digits <= 1:
+        # x уже в диапазоне [1, 10) — используем ряд ln(1+t)
+        return _ln_via_series(x, pairs)
+    else:
+        # x = m·10^k
+        k = int_digits - 1
+        # m = x // 10^k в десятичной арифметике
+        pow10 = _from_int(10 ** k)
+        m = div(x, pow10)
+        ln_m = _ln_via_series(m, pairs + 1)
+        ln_pow = mul(ln10, _from_int(k))
+        r = add(ln_m, ln_pow)
+        return B10K(sign=r.sign, digs=_shift_right_abs(r.digs, 2), frac_pairs=pairs)
+
+
+def _ln_via_series(x: B10K, pairs: int) -> B10K:
+    """ln(x) для x ≈ 1 через ряд ln(1+t) с S-масштабированием."""
+    one = _from_int(1)
+    t = sub(x, one)  # t = x − 1
+    if _is_zero(t):
+        return B10K(sign=1, digs=[0], frac_pairs=pairs)
+
+    S = pow_b10k(_from_int(BASE), _from_int(2 * (pairs + 1)))
+    fp = t.frac_pairs if hasattr(t, 'frac_pairs') and t.frac_pairs else 0
+
+    t_times_S = mul(t, S)
+    if fp > 0:
+        t_scaled = B10K(sign=t.sign, digs=_shift_right_abs(t_times_S.digs, 2 * fp))
+    else:
+        t_scaled = t_times_S
+    t_sq = mul(t, t)
+
+    if _is_zero(t_scaled):
+        return B10K(sign=1, digs=[0], frac_pairs=pairs)
+
+    result = _zero()
+    term = t_scaled  # k=1: t·S
+    k = 1
+    while True:
+        # term_k = (-1)^(k-1)·t^k/k·S
+        if k % 2 == 1:
+            result = add(result, term)
+        else:
+            result = sub(result, term)
+
+        # term_{k+1} = term_k · t · k/(k+1)
+        temp = mul(term, t) if k >= 1 else mul(term, t_scaled)
+        if _is_zero(temp):
+            break
+        if k >= 1:
+            temp = B10K(sign=temp.sign, digs=_mul_small(temp.digs, k))
+            temp = B10K(sign=temp.sign, digs=_div_small_abs(temp.digs, k + 1))
+        if fp > 0 and k > 0:
+            temp = B10K(sign=temp.sign, digs=_shift_right_abs(temp.digs, 2 * fp))
+        term = temp
+        k += 1
+        if _is_zero(term):
+            break
+
+    result = B10K(sign=result.sign, digs=_shift_right_abs(result.digs, 2), frac_pairs=pairs)
+    if not result.digs:
+        result = B10K(sign=1, digs=[0], frac_pairs=pairs)
+    return result
+
+
+def log10_b10k(x: B10K, pairs: int = 10) -> B10K:
+    """log10(x) = ln(x)/ln(10)."""
+    # ln(10) ≈ 2.3025850929940456840
+    ln10 = parse_frac("2,3025.8509.2994.0456.8401")
+    ln_pairs = pairs + 2
+    ln_x = ln_b10k(x, ln_pairs)
+    ln10_val = ln_b10k(_from_int(10), ln_pairs)
+    r = div(ln_x, ln10_val)
+    return B10K(sign=r.sign, digs=_shift_right_abs(r.digs, 2 * 2), frac_pairs=pairs)
 
 
 # Публичный entry point для REPL (используется в b10k CLI)
