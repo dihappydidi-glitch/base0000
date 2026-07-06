@@ -10,6 +10,8 @@
   - ровно одно двоеточие
   - внутри половины группы разделяются точками
   - минус в начале — отрицательное число
+  - обе половины всегда имеют одинаковое количество групп;
+    более короткая дополняется нулями справа (LSB-конец)
 
 Модель: цифры big-endian переплетаются между половинами.
 BE = [L₀, R₀, L₁, R₁, ..., Lₙ₋₁, Rₙ₋₁]
@@ -654,20 +656,17 @@ def _parse_int(s: str, sign: int) -> B10K:
         if not (0 <= v <= 9999):
             raise ValueError(f"цифра вне диапазона 0..9999: {v}")
 
-    # Обе половины должны иметь одинаковое число групп.
-    # Более короткую дополняем нулями справа (LSB-конец).
+    # L не длиннее R (L ≤ R), может быть на 1 короче (L = R-1).
+    # Более короткую половину дополняем нулями справа (MSB-конец).
     n = max(len(left_groups), len(right_groups))
     left_groups += [0] * (n - len(left_groups))
     right_groups += [0] * (n - len(right_groups))
 
-    # Переплетение: [L₀, R₀, L₁, R₁, ...] в big-endian
-    be = []
+    # LE = [R₀, L₀, R₁, L₁, ...] — LSB→MSB, согласован с _format_int
+    le = []
     for i in range(n):
-        be.append(left_groups[i])
-        be.append(right_groups[i])
-
-    # BE → LE
-    le = list(reversed(be))
+        le.append(right_groups[i])
+        le.append(left_groups[i])
     le = _trim(le)
     if not le:
         le = [0]
@@ -727,15 +726,24 @@ def _parse_frac(s: str, sign: int) -> B10K:
             return B10K(sign=sign, digs=combined)
 
         # Старый формат: дробь_левая:целая,дробь_правая (запятая справа)
+        # или новый формат: int_L.frac_L: int_R,.frac_R
         right_whole_str, right_frac_str = right_str.split(',', 1)
         left_frac_str = left_str
         int_part_str = right_whole_str
 
-        int_val = int(int_part_str) if int_part_str.strip() else 0
-        int_b10k = _from_int(int_val)
-
         left_groups_str = [g for g in left_frac_str.split('.') if g.strip()]
         right_groups_str = [g for g in right_frac_str.split('.') if g.strip()]
+
+        # Если слева больше групп — новый формат: первая группа = int_L
+        if len(left_groups_str) > len(right_groups_str):
+            int_L_str = left_groups_str[0]
+            left_groups_str = left_groups_str[1:]  # дробные L
+            int_val = int(int_part_str) if int_part_str.strip() else 0
+            int_val += int(int_L_str) * BASE
+            int_b10k = _from_int(int_val)
+        else:
+            int_val = int(int_part_str) if int_part_str.strip() else 0
+            int_b10k = _from_int(int_val)
 
         n = max(len(left_groups_str), len(right_groups_str))
         left_padded = (['0'] * (n - len(left_groups_str)) + left_groups_str
@@ -851,13 +859,19 @@ def parse_frac(s: str) -> B10K:
     (в новом формате — после int_R). Порядок — от младших к старшим.
     """
     b = parse(s)
-    # Вычисляем число дробных пар: (число точек после запятой + 1) // 2
+    # Вычисляем число дробных пар
     comma_pos = s.index(',')
     after_comma = s[comma_pos + 1:]
     if '.' in after_comma:
-        n_dots = after_comma.count('.')
-        n_groups = n_dots + 1  # групп после запятой
-        b.frac_pairs = (n_groups + 1) // 2  # с округлением вверх
+        groups = [g for g in after_comma.split('.') if g.strip()]
+        n_groups = len(groups)
+        # Если после запятой сразу идёт точка — формат "int_R,.R0.R1":
+        # все группы после запятой — R (по одной на пару).
+        if after_comma.lstrip().startswith('.'):
+            b.frac_pairs = n_groups
+        else:
+            # Формат "int_part, L0.R0.L1.R1": чередование L/R.
+            b.frac_pairs = (n_groups + 1) // 2
     elif after_comma.strip() == '0':
         # "0,0" — ноль с одной парой
         b.frac_pairs = 1
@@ -1347,7 +1361,7 @@ if __name__ == "__main__":
     print("=== Сложение / вычитание ===")
     test("1",   "0000:0005", "0000:0003", '+', "0000:0008")
     test("2",   "0000:9999", "0000:0001", '+', "0001:0000")
-    test("3",   "9999:9999", "0000:0001", '+', "0000.0000:0001.0000")
+    test("3",   "9999:9999", "0000:0001", '+', "0000.0000:0000.0001")
     test("4",   "0000:0005", "0000:0003", '-', "0000:0002")
     test("5",   "0001:0000", "0000:0001", '-', "0000:9999")
     test("6",   "0000:0005", "-0000:0003", '+', "0000:0002")
@@ -1358,13 +1372,13 @@ if __name__ == "__main__":
     test("9",   "0000:0005", "0000:0003", '*', "0000:0015")
     test("10",  "0000:0012", "0000:0012", '*', "0000:0144")
     test("11",  "0000:9999", "0000:9999", '*', "9998:0001")
-    test("12",  "9999:9999", "9999:9999", '*', "9999.0000:9998.0001")
-    test("13",  "0001:0000", "0001:0000", '*', "0000.0000:0001.0000")
+    test("12",  "9999:9999", "9999:9999", '*', "0000.9999:0001.9998")
+    test("13",  "0001:0000", "0001:0000", '*', "0000.0000:0000.0001")
     test("14",  "-0000:0003", "0000:0005", '*', "-0000:0015")
 
     print("\n=== Деление и остаток ===")
     test("15",  "9998:0001", "0000:9999", '/', "0000:9999")
-    test("16",  "0000.0000:0001.0000", "0001:0000", '/', "0001:0000")
+    test("16",  "0000.0000:0000.0001", "0001:0000", '/', "0001:0000")
     test("17",  "0001:0000", "0000:0003", '/', "0000:3333")
     test("18",  "0000:0015", "0000:0003", '/', "0000:0005")
     test("19",  "0000:0010", "0000:0003", '/', "0000:0003")
