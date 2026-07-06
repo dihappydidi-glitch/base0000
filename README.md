@@ -113,7 +113,7 @@ B10K stores the fractional part **not as a sum of powers of 10000**, but as **de
 
 **Formatting algorithm (internal → B10K string):**
 
-LE array is traversed from the **MSB end** (rightmost index) to the LSB:
+The internal storage (`digs` array, little-endian — least significant group at index 0) is traversed from the **MSB end** (rightmost index) to the LSB:
 
 1. If the number of LE elements is odd — the MSB element is an R-group (odd index in BE → right half)
 2. Remaining elements are collected in pairs: **(L, R)** from each 2-element segment, MSB→LSB
