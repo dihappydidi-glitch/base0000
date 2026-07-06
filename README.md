@@ -45,7 +45,7 @@ Rules:
 - Each group is exactly 4 decimal digits with leading zeros
 - Left and right halves always have **the same number of groups** — if the left half has fewer, `0000` groups are prepended at the MSB end
 - Minimum representation — one pair `0000:0000` (zero)
-- The MSB (leftmost) R-group is never zero (except single-pair numbers like `0000:0005`)
+- The MSB R-group **may be `0000`** as long as at least one L-group to its left is non-zero. A fully-zero MSB R-group is forbidden only when all more significant (left) groups are also zero — otherwise the number would start with unnecessary leading zeros. Leading zeros within a non-zero R-group are always valid: e.g., `0000:0005` (R=`0005`) and `0000:0010` (R=`0010`)
 
 ### Fractional Numbers
 
