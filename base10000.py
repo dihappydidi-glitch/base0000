@@ -469,19 +469,44 @@ def pow_b10k(a: B10K, b: B10K) -> B10K:
     return result
 
 
-def fact(n: B10K) -> B10K:
-    """n! (факториал)."""
+def fact(n: B10K, *extra: B10K) -> B10K:
+    """n! (факториал).
+
+    Один аргумент: обычный факториал n!.
+    Два аргумента: дробный B10K, где целая часть = fact(n),
+    дробные группы = факториалы extra аргументов, разбитые на B10K-группы.
+    Пример: fact(4, 769) → целая часть 24, дробная = fact(769) в base-10000
+    """
     if n.sign == -1:
         raise ValueError("факториал отрицательного")
     if _is_zero(n) or (len(n.digs) == 1 and n.digs[0] == 1):
-        return _from_int(1)
-    result = _from_int(1)
-    i = _from_int(2)
-    one = _from_int(1)
-    while i <= n:
-        result = mul(result, i)
-        i = add(i, one)
-    return result
+        int_result = _from_int(1)
+    else:
+        int_result = _from_int(1)
+        i = _from_int(2)
+        one = _from_int(1)
+        while i <= n:
+            int_result = mul(int_result, i)
+            i = add(i, one)
+
+    if not extra:
+        return int_result
+
+    # Дробная часть: факториал каждого extra → B10K LE-группы
+    all_frac_groups: List[int] = []
+    for f in extra:
+        f_fact = fact(f)  # рекурсия (1 аргумент)
+        all_frac_groups.extend(f_fact.digs)
+
+    # Дополняем до чётного числа LE-групп (2 группы = 1 пара)
+    if len(all_frac_groups) % 2 != 0:
+        all_frac_groups.append(0)
+
+    frac_pairs = len(all_frac_groups) // 2
+
+    # LE: [frac_groups..., int_groups...]
+    combined_digs = all_frac_groups + int_result.digs
+    return B10K(sign=1, digs=combined_digs, frac_pairs=frac_pairs)
 
 
 def gcd(a: B10K, b: B10K) -> B10K:
@@ -1014,7 +1039,10 @@ def _repl():
             rest = eval_expr(tokens[close_idx + 1:])
 
             if func_name == 'fact':
-                result = fact(args[0])
+                if len(args) < 1:
+                    print("  fact(n [, m, ...]) — факториал n! или дробный")
+                    return None
+                result = fact(args[0], *args[1:])
             elif func_name == 'gcd':
                 result = gcd(args[0], args[1])
             elif func_name == 'lcm':

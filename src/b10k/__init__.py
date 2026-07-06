@@ -469,19 +469,44 @@ def pow_b10k(a: B10K, b: B10K) -> B10K:
     return result
 
 
-def fact(n: B10K) -> B10K:
-    """n! (факториал)."""
+def fact(n: B10K, *extra: B10K) -> B10K:
+    """n! (факториал).
+
+    Один аргумент: обычный факториал n!.
+    Два аргумента: дробный B10K, где целая часть = fact(n),
+    дробные группы = факториалы extra аргументов, разбитые на B10K-группы.
+    Пример: fact(4, 769) → целая часть 24, дробная = fact(769) в base-10000
+    """
     if n.sign == -1:
         raise ValueError("факториал отрицательного")
     if _is_zero(n) or (len(n.digs) == 1 and n.digs[0] == 1):
-        return _from_int(1)
-    result = _from_int(1)
-    i = _from_int(2)
-    one = _from_int(1)
-    while i <= n:
-        result = mul(result, i)
-        i = add(i, one)
-    return result
+        int_result = _from_int(1)
+    else:
+        int_result = _from_int(1)
+        i = _from_int(2)
+        one = _from_int(1)
+        while i <= n:
+            int_result = mul(int_result, i)
+            i = add(i, one)
+
+    if not extra:
+        return int_result
+
+    # Дробная часть: факториал каждого extra → B10K LE-группы
+    all_frac_groups: List[int] = []
+    for f in extra:
+        f_fact = fact(f)  # рекурсия (1 аргумент)
+        all_frac_groups.extend(f_fact.digs)
+
+    # Дополняем до чётного числа LE-групп (2 группы = 1 пара)
+    if len(all_frac_groups) % 2 != 0:
+        all_frac_groups.append(0)
+
+    frac_pairs = len(all_frac_groups) // 2
+
+    # LE: [frac_groups..., int_groups...]
+    combined_digs = all_frac_groups + int_result.digs
+    return B10K(sign=1, digs=combined_digs, frac_pairs=frac_pairs)
 
 
 def gcd(a: B10K, b: B10K) -> B10K:
@@ -789,7 +814,7 @@ def to_dec(a: B10K, frac_pairs: Optional[int] = None) -> str:
 _b10k_to_int = to_int  # обратная совместимость
 
 
-def format_frac(a: B10K, frac_pairs: int, comma_in_left: bool = False) -> str:
+def format_frac(a: B10K, frac_pairs: int, comma_in_left: bool = True) -> str:
     """
     B10K → строка с дробной частью.
 
@@ -800,10 +825,13 @@ def format_frac(a: B10K, frac_pairs: int, comma_in_left: bool = False) -> str:
       a — B10K, где объединены целая и дробная части (LE: старшие =
            целая часть, младшие = дробная часть)
       frac_pairs — число пар (L,R) в дробной части
-      comma_in_left — True: запятая после L₁; False (по умолч.): запятая после R₁
+      comma_in_left — True (по умолчанию): запятая в левой половине
+                      False: запятая в правой половине
 
     Примеры:
-      format_frac(a, 4)                → "0000.1415.3589.3846.3832:0003,9265.7932.2643.7950"
+      format_frac(a, 4)                → "6,708.3249.0892.1006:2039.9369.2752.1938"
+      format_frac(a, 4, comma_in_left=False)
+        → "708.3249.0892.1006:6,2039.9369.2752.1938"
     """
     if _is_zero(a):
         return "0000:0000"
@@ -813,22 +841,18 @@ def format_frac(a: B10K, frac_pairs: int, comma_in_left: bool = False) -> str:
 
     if n_frac_le >= n_le:
         # Целая часть = 0, всё число — дробное
+        int_val = 0
         pad = [0] * (n_frac_le - n_le)
         frac_digs_rev = list(reversed(pad + a.digs))
-        # Целая часть — нулевая: парная половинка (L,R) = 0000,0000
-        int_L = "0000"
-        int_R = "0000"
     else:
         int_digs = a.digs[n_frac_le:]
         frac_digs = a.digs[:n_frac_le]
-        frac_digs_rev = list(reversed(frac_digs))
 
-        # Целую часть превращаем в пару (L,R) с дополнением до 4 цифр
-        int_be = list(reversed(int_digs))
-        if len(int_be) % 2 != 0:
-            int_be.insert(0, 0)
-        int_L = f"{int_be[0]:04d}"
-        int_R = f"{int_be[1]:04d}"
+        int_val = _b10k_to_int(B10K(1, int_digs)) * a.sign
+        if int_val < 0:
+            int_val = -int_val
+
+        frac_digs_rev = list(reversed(frac_digs))
 
     # BE → десятичные цифры дробной части: pad4, concat, lstrip('0')
     frac_dec = ''.join(f"{g:04d}" for g in frac_digs_rev).lstrip('0')
@@ -854,17 +878,14 @@ def format_frac(a: B10K, frac_pairs: int, comma_in_left: bool = False) -> str:
     # Первая левая группа — без ведущих нулей
     left_groups[0] = left_groups[0].lstrip('0') or '0'
 
+    left_str = '.'.join(left_groups)
+    right_str = '.'.join(right_groups)
     sign_str = "-" if a.sign == -1 else ""
 
-    # Два варианта записи с запятой как десятичным разделителем:
-    #   comma_in_left=True:  L₁, L₂.L₃…:R₁.R₂.R₃…
-    #   comma_in_left=False: L₁.L₂.L₃…:R₁,.R₂.R₃…  (по умолчанию)
     if comma_in_left:
-        right_with_int = [int_R] + right_groups
-        return f"{sign_str}{int_L},{'.'.join(left_groups)}:{'.'.join(right_with_int)}"
+        return f"{sign_str}{int_val},{left_str}:{right_str}"
     else:
-        left_with_int = [int_L] + left_groups
-        return f"{sign_str}{'.'.join(left_with_int)}:{int_R},{'.' + '.'.join(right_groups)}"
+        return f"{sign_str}{left_str}:{int_val},{right_str}"
 
 
 # ─── короткие псевдонимы ──────────────────────────────────
@@ -1018,7 +1039,10 @@ def _repl():
             rest = eval_expr(tokens[close_idx + 1:])
 
             if func_name == 'fact':
-                result = fact(args[0])
+                if len(args) < 1:
+                    print("  fact(n [, m, ...]) — факториал n! или дробный")
+                    return None
+                result = fact(args[0], *args[1:])
             elif func_name == 'gcd':
                 result = gcd(args[0], args[1])
             elif func_name == 'lcm':
