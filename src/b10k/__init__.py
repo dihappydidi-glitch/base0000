@@ -46,9 +46,13 @@ class B10K:
     digs:  little-endian массив разрядов (0..9999)
            digs[0] + digs[1]*BASE + digs[2]*BASE^2 + ...
            Без ведущих нулей (кроме нуля: [0])
+    frac_pairs: число дробных пар (0 = целое число).
+                Устанавливается при создании дробного B10K (pi_b10k и т.п.)
+                для корректной конвертации в десятичную строку с точкой.
     """
     sign: int
     digs: List[int]
+    frac_pairs: int = 0
 
     # ── арифметические операторы ──────────────────────────
 
@@ -374,19 +378,22 @@ def _shift_right_abs(a: List[int], k: int) -> List[int]:
 def neg(a: B10K) -> B10K:
     if _is_zero(a):
         return _zero()
-    return B10K(sign=-a.sign, digs=list(a.digs))
+    return B10K(sign=-a.sign, digs=list(a.digs), frac_pairs=a.frac_pairs)
 
 
 def add(a: B10K, b: B10K) -> B10K:
     if a.sign == b.sign:
-        return B10K(sign=a.sign, digs=_add_abs(a.digs, b.digs))
-    cmp = _cmp_abs(a.digs, b.digs)
-    if cmp == 0:
-        return _zero()
-    if cmp > 0:
-        return B10K(sign=a.sign, digs=_sub_abs(a.digs, b.digs))
+        result = B10K(sign=a.sign, digs=_add_abs(a.digs, b.digs))
     else:
-        return B10K(sign=b.sign, digs=_sub_abs(b.digs, a.digs))
+        cmp = _cmp_abs(a.digs, b.digs)
+        if cmp == 0:
+            result = _zero()
+        elif cmp > 0:
+            result = B10K(sign=a.sign, digs=_sub_abs(a.digs, b.digs))
+        else:
+            result = B10K(sign=b.sign, digs=_sub_abs(b.digs, a.digs))
+    result.frac_pairs = max(a.frac_pairs, b.frac_pairs)
+    return result
 
 
 def sub(a: B10K, b: B10K) -> B10K:
@@ -397,7 +404,9 @@ def mul(a: B10K, b: B10K) -> B10K:
     if _is_zero(a) or _is_zero(b):
         return _zero()
     sign = 1 if a.sign == b.sign else -1
-    return B10K(sign=sign, digs=_mul_abs(a.digs, b.digs))
+    result = B10K(sign=sign, digs=_mul_abs(a.digs, b.digs))
+    result.frac_pairs = a.frac_pairs + b.frac_pairs
+    return result
 
 
 def div_mod(a: B10K, b: B10K) -> Tuple[B10K, B10K]:
@@ -673,15 +682,17 @@ def format_num(a: B10K, frac_pairs: int = 0) -> str:
     """
     B10K → строка (переплетающаяся модель).
 
-    По умолчанию (frac_pairs=0): целое число.
+    По умолчанию (frac_pairs=0): целое число, но если a.frac_pairs > 0,
+    используется a.frac_pairs.
     При frac_pairs > 0: выделяет указанное число дробных пар (2×frac_pairs
     LE-элементов как младшие разряды) и форматирует с запятой.
     """
     if _is_zero(a):
         return "0000:0000"
 
-    if frac_pairs > 0:
-        return format_frac(a, frac_pairs)
+    fp = frac_pairs or a.frac_pairs
+    if fp > 0:
+        return format_frac(a, fp)
 
     return _format_int(a)
 
@@ -723,21 +734,26 @@ def to_int(a: B10K) -> int:
     return n * a.sign
 
 
-def to_dec(a: B10K, frac_pairs: int = 0) -> str:
+def to_dec(a: B10K, frac_pairs: Optional[int] = None) -> str:
     """B10K → десятичная строка с точкой для дробных.
 
     Параметры:
       a — B10K число.
       frac_pairs — число дробных пар (8 десятичных цифр на пару).
+                   Если None (по умолчанию), берётся из a.frac_pairs.
                    Если > 0, последние 2*frac_pairs LE-элементов — дробная часть,
                    ставится десятичная точка.
 
     Примеры:
       to_dec(B("0000:0120"))                  → "120"
-      to_dec(pi_b10k(4), frac_pairs=4)         → "3.14159265358979323846264338327950"
+      to_dec(pi_b10k(4))                       → "3.14159265358979323846264338327950"
       to_dec(B("-0000:0003"))                  → "-3"
       to_dec(B("-0001:0000"))                  → "-10000"
     """
+    if frac_pairs is None:
+        frac_pairs = a.frac_pairs
+    if frac_pairs is None:
+        frac_pairs = 0
     if _is_zero(a):
         if frac_pairs > 0:
             return f"-0.{'0' * (8 * frac_pairs)}" if a.sign == -1 else f"0.{'0' * (8 * frac_pairs)}"
@@ -1156,9 +1172,10 @@ def pi_b10k(pairs: int = 20) -> B10K:
     result = sub(mul(_from_int(16), a5), mul(_from_int(4), a239))
 
     # Отбросить запасную пару: сдвинуть LE-массив вправо на 2 цифры
-    result = B10K(sign=result.sign, digs=_shift_right_abs(result.digs, 2))
+    result = B10K(sign=result.sign, digs=_shift_right_abs(result.digs, 2),
+                  frac_pairs=pairs)
     if not result.digs:
-        result = B10K(sign=1, digs=[0])
+        result = B10K(sign=1, digs=[0], frac_pairs=pairs)
 
     return result
 
