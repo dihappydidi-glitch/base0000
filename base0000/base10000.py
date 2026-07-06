@@ -476,10 +476,34 @@ def pow_b10k(a: B10K, b: B10K) -> B10K:
     return result
 
 
+def _range_product(lo: int, hi: int) -> B10K:
+    """Произведение int-чисел lo..hi как B10K через дерево (product tree).
+
+    Разбивает диапазон пополам рекурсивно, чтобы малые множители
+    перемножались первыми — это заменяет O(n²·log n) последовательного
+    цикла на O(n^1.585 · log n) Karatsuba-дерева.
+    """
+    if lo > hi:
+        return _from_int(1)
+    if lo == hi:
+        return _from_int(lo)
+    # Малый диапазон — последовательно
+    if hi - lo <= 32:
+        r = _from_int(1)
+        for i in range(lo, hi + 1):
+            r = mul(r, _from_int(i))
+        return r
+    mid = (lo + hi) // 2
+    left = _range_product(lo, mid)
+    right = _range_product(mid + 1, hi)
+    return mul(left, right)
+
+
 def fact(n: B10K, *extra: B10K) -> B10K:
     """n! (факториал).
 
-    Один аргумент: обычный факториал n!.
+    Один аргумент: обычный факториал n! — использует product tree
+    (разделяй-и-властвуй) для ускорения.
     Два аргумента: дробный B10K, где целая часть = fact(n),
     дробные группы = факториалы extra аргументов, разбитые на B10K-группы.
     Пример: fact(4, 769) → целая часть 24, дробная = fact(769) в base-10000
@@ -489,12 +513,8 @@ def fact(n: B10K, *extra: B10K) -> B10K:
     if _is_zero(n) or (len(n.digs) == 1 and n.digs[0] == 1):
         int_result = _from_int(1)
     else:
-        int_result = _from_int(1)
-        i = _from_int(2)
-        one = _from_int(1)
-        while i <= n:
-            int_result = mul(int_result, i)
-            i = add(i, one)
+        n_int = to_int(n)
+        int_result = _range_product(1, n_int) if n_int >= 2 else _from_int(1)
 
     if not extra:
         return int_result
@@ -1687,10 +1707,14 @@ def tan_b10k(x: B10K, pairs: int = 10) -> B10K:
     s = sin_b10k(x, pairs + 1)
     c = cos_b10k(x, pairs + 1)
     if _is_zero(c):
-        raise ValueError("tan(x): асимптота (cos ≈ 0)")
-    t = div(s, c)
-    # отбросить запасную пару
-    return B10K(sign=t.sign, digs=_shift_right_abs(t.digs, 2), frac_pairs=pairs)
+        raise ValueError("tan(x): asimptota (cos ~ 0)")
+    # s и c имеют frac_pairs = pairs+1.
+    # div(s, c) даёт floor(tan(x)) — теряем дробную часть при |tan|<1.
+    # Умножаем s.digs на 10000^(2*pairs) перед делением,
+    # чтобы result.digs ~ tan(x) * 10000^(2*pairs), frac_pairs = pairs.
+    S = pow_b10k(_from_int(BASE), _from_int(2 * pairs))
+    t = div(mul(s, S), c)
+    return B10K(sign=t.sign, digs=t.digs, frac_pairs=pairs)
 
 
 def atan_b10k(x: B10K, pairs: int = 10) -> B10K:
@@ -1708,6 +1732,10 @@ def atan_b10k(x: B10K, pairs: int = 10) -> B10K:
         a = atan_b10k(inv, pairs + 1)
         r = sub(half_pi, a)
         return B10K(sign=r.sign, digs=_shift_right_abs(r.digs, 2), frac_pairs=pairs)
+    if _cmp_abs(x.digs, one.digs) == 0 and (not hasattr(x, 'frac_pairs') or x.frac_pairs == 0):
+        # atan(1) = π/4  — прямой результат, избегаем медленного ряда
+        q = div(pi_b10k(pairs + 1), _from_int(4))
+        return B10K(sign=q.sign, digs=_shift_right_abs(q.digs, 2), frac_pairs=pairs)
 
     S = pow_b10k(_from_int(BASE), _from_int(2 * (pairs + 1)))
     fp = x.frac_pairs if hasattr(x, 'frac_pairs') and x.frac_pairs else 0
