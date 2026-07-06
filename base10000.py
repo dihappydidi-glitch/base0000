@@ -10,6 +10,8 @@
   - ровно одно двоеточие
   - внутри половины группы разделяются точками
   - минус в начале — отрицательное число
+  - обе половины всегда имеют одинаковое количество групп;
+    более короткая дополняется нулями справа (LSB-конец)
 
 Модель: цифры big-endian переплетаются между половинами.
 BE = [L₀, R₀, L₁, R₁, ..., Lₙ₋₁, Rₙ₋₁]
@@ -654,14 +656,17 @@ def _parse_int(s: str, sign: int) -> B10K:
         if not (0 <= v <= 9999):
             raise ValueError(f"цифра вне диапазона 0..9999: {v}")
 
+    # Обе половины должны иметь одинаковое число групп.
+    # Более короткую дополняем нулями справа (LSB-конец).
+    n = max(len(left_groups), len(right_groups))
+    left_groups += [0] * (n - len(left_groups))
+    right_groups += [0] * (n - len(right_groups))
+
     # Переплетение: [L₀, R₀, L₁, R₁, ...] в big-endian
     be = []
-    n = max(len(left_groups), len(right_groups))
     for i in range(n):
-        if i < len(left_groups):
-            be.append(left_groups[i])
-        if i < len(right_groups):
-            be.append(right_groups[i])
+        be.append(left_groups[i])
+        be.append(right_groups[i])
 
     # BE → LE
     le = list(reversed(be))
@@ -772,9 +777,9 @@ def _parse_frac(s: str, sign: int) -> B10K:
     right_groups_str = [groups[i] for i in range(1, len(groups), 2)]
 
     n = max(len(left_groups_str), len(right_groups_str))
-    left_padded = (['0'] * (n - len(left_groups_str)) + left_groups_str
+    left_padded = (left_groups_str + ['0'] * (n - len(left_groups_str))
                    if len(left_groups_str) < n else left_groups_str)
-    right_padded = (['0'] * (n - len(right_groups_str)) + right_groups_str
+    right_padded = (right_groups_str + ['0'] * (n - len(right_groups_str))
                     if len(right_groups_str) < n else right_groups_str)
 
     be = []
@@ -800,8 +805,8 @@ def format_num(a: B10K, frac_pairs: int = 0) -> str:
 
     Формат (целое): L₀.L₁...:R₀.R₁...
       Пример: 0000:0005
-    Формат (дробь): L₀.L₁...:R₀.R₁...,L₀.L₁...:R₀.R₁...
-      Пример: 1415.3589.3846.3832:9265.7932.2643.7950,0000:0003
+    Формат (дробь): int_L.frac_L₀.frac_L₁...:int_R,.frac_R₀.frac_R₁...
+      Пример: 0000.1415.3589.3846.3832:0003,.9265.7932.2643.7950
     Порядок групп — от младших разрядов (LSB) к старшим.
     """
     fp = frac_pairs or a.frac_pairs
@@ -842,9 +847,10 @@ def parse_frac(s: str) -> B10K:
     Парсинг дробного B10K (с запятой).
     Возвращает B10K с frac_pairs, вычисленным из числа точек в дробной части.
 
-    Формат: L₀.L₁...:R₀.R₁...,L₀.L₁...:R₀.R₁...
-    L — чётные четвёрки, R — нечётные. Запятая между дробной и целой частью.
-    Порядок — от младших к старшим.
+    Формат: int_L.frac_L₀.frac_L₁...:int_R,.frac_R₀.frac_R₁...
+    или (старый) L₀.L₁...:R₀.R₁...,L₀.L₁...:R₀.R₁...
+    L — чётные четвёрки, R — нечётные. Запятая между дробной и целой частью
+    (в новом формате — после int_R). Порядок — от младших к старшим.
     """
     b = parse(s)
     # Вычисляем число дробных пар: (число точек после запятой + 1) // 2
@@ -929,10 +935,12 @@ def format_frac(a: B10K, frac_pairs: int) -> str:
     """
     B10K → строка с дробной частью.
 
-    Формат: L₀.L₁.L₂...:R₀.R₁.R₂...,L₀.L₁...:R₀.R₁...
-    Чётные четвёрки (L) слева от ':', нечётные (R) справа.
-    Дробная часть → пары от LSB к MSB, затем запятая,
-    затем целая часть в том же формате.
+    Формат: int_L.frac_L₀.frac_L₁...:int_R,.frac_R₀.frac_R₁...
+    L-группы (чётные четвёрки) слева от ':', R-группы (нечётные) справа.
+    Целая часть — первые (самые левые) группы в каждой половине.
+    Запятая между целой R-группой и дробными R-группами.
+
+    Пример: 0000.1415.3589.3846.3832:0003,.9265.7932.2643.7950  (π, 4 пары)
 
     Для дроби: digs[:2*frac_pairs] хранятся как [Rₙ₋₁, Lₙ₋₁, …, R₀, L₀]
     (MSB→LSB pair в LE из-за переворота интерливинга).
@@ -968,9 +976,18 @@ def format_frac(a: B10K, frac_pairs: int) -> str:
         int_L.append(f"{l:04d}")
 
     sign_str = "-" if a.sign == -1 else ""
-    frac_str = f"{'.'.join(frac_L)}:{'.'.join(frac_R)}"
-    int_str = f"{'.'.join(int_L)}:{'.'.join(int_R)}" if int_L else "0"
-    return f"{sign_str}{frac_str},{int_str}"
+
+    # L side: int_L первой, затем дробные L-группы, все разделены точками
+    L_str = ".".join(int_L) if int_L else "0"
+    if frac_L:
+        L_str += "." + ".".join(frac_L)
+
+    # R side: int_R первым, затем запятая+точка, затем дробные R-группы
+    R_str = ".".join(int_R) if int_R else "0"
+    if frac_R:
+        R_str += ",." + ".".join(frac_R)
+
+    return f"{sign_str}{L_str}:{R_str}"
 
 
 # ─── короткие псевдонимы ──────────────────────────────────
