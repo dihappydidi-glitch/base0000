@@ -1102,6 +1102,46 @@ b10k> 9999.9999:0000.0000 * 9999.9999:0000.0000
 
 ---
 
+## Functions Reference
+
+All functions are available in the REPL and as Python import (`from b10k import …`).
+
+| Function | Arguments | Description | Output Format |
+|----------|-----------|-------------|---------------|
+| `pi` | `pairs` — number of digit pairs (default 10) | Compute π using the Machin-like formula: 16·arctan(1/5) − 4·arctan(1/239). Each pair = 8 decimal digits. `pi(10)` = 80 digits, `pi(100)` = 800 digits. | fractional B10K |
+| `sqrt` | `x` — B10K number; `pairs` — fractional pairs (optional) | Integer square root, or square root with fractional part. `sqrt(x)` = ⌊√x⌋; `sqrt(x, n)` = √x with n fractional pairs (8n decimal digits). | integer B10K or fractional B10K |
+| `tod` | `x` — B10K number; `pairs` — fractional pairs (optional) | Convert B10K number to decimal string. `tod(x)` = decimal digits; `tod(x, n)` = decimal with comma after n fractional pairs. | decimal string |
+| `fact` | `n` — B10K integer | Factorial n! = 1 × 2 × 3 × … × n. | B10K integer |
+| `gcd` | `a, b` — B10K integers | Greatest common divisor (Euclidean algorithm). | B10K integer |
+| `lcm` | `a, b` — B10K integers | Least common multiple. `lcm(a,b) = a·b / gcd(a,b)`. | B10K integer |
+| `isqrt` | `n` — B10K integer | Integer square root ⌊√n⌋ (Newton's method). | B10K integer |
+
+### Output Format Selection (`$fmt`)
+
+The REPL supports three output formats set via the special variable `$fmt`:
+
+| Command | Effect |
+|---------|--------|
+| `$fmt = auto` | **(default)** — fractional numbers display in decimal (`3.14159…`), integers in B10K |
+| `$fmt = dec` | **Always decimal** — all results as decimal strings |
+| `$fmt = b10k` | **Always B10K** — all results in `0000.1415…:0003,…` format |
+
+Example:
+```
+b10k> pi(5)
+  3.1415926535897932384626433832795028841971
+b10k> $fmt = b10k
+  формат: b10k
+b10k> pi(5)
+  0000.1415.3589.3846.3832.2884:0003,.9265.7932.2643.7950.1971
+b10k> $fmt = dec
+  формат: dec
+b10k> pi(5)
+  3.1415926535897932384626433832795028841971
+```
+
+---
+
 ## Arithmetic Operations
 
 | Operator | Description | Complexity |

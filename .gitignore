@@ -16,6 +16,10 @@
 !/base0000/pyproject.toml
 !/base0000/LICENSE
 
+# Root project files (shown on GitHub)
+!/README.md
+!/LICENSE
+
 # Still ignore common junk
 NTUSER.DAT*
 *.TM.blf
