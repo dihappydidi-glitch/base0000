@@ -930,7 +930,7 @@ BE = [0, 0, 1, 0]  →  0·10000³ + 0·10000² + 1·10000 + 0 = 10000
 Fractional digits — group interleaving:
 
 ```
-  BE = [L₀, R₀, L₁, R₁, L₂, R₂, L₃, R₃]
+  BE = [L₁, R₁, L₂, R₂, L₃, R₃, L₄, R₄]
      = [708, 2039, 3249, 9369, 892, 2752, 1006, 1938]
 
   Each group → 4 digits (pad4):
@@ -951,14 +951,15 @@ Fractional digits — group interleaving:
   ¹⁴ ···· ⁷⁷   ²³  ···· ³⁰   ¹⁵  ···· ²²   ⁰⁷  ···· ¹⁴
   1006 1938     0892 2752     3249 9369     0708 2039     ← 8-chunk → (L,R)
   └──┬──┘ └──┬──┘  └──┬──┘ └──┬──┘  └──┬──┘ └──┬──┘  └─┬─┘ └──┬──┘
-   L₃   R₃    L₂   R₂    L₁   R₁    L₀   R₀
+   L₄   R₄    L₃   R₃    L₂   R₂    L₁   R₁
   
   Leftmost 8-chunk (0708 2039) was shorter (7 digits → left-padded to 8)
   
   First left group without leading zero: 708
 
-  Result: 6, L₀.L₁.L₂.L₃ : R₀.R₁.R₂.R₃
+  Result: 6, L₁.L₂.L₃.L₄ : R₁.R₂.R₃.R₄
          = 6,708.3249.0892.1006 : 2039.9369.2752.1938
+         (integer = 6, L₁ = 708 — together "6,708")
 ```
 
 **Breakdown of ∛45 (comma in left half):**
@@ -992,12 +993,13 @@ Fractional digits — group interleaving:
   ⁰⁷ ···· ¹⁴   ¹⁵  ···· ²²   ²³  ···· ³⁰   ⁰⁰  ···· ⁰⁶
   0556 8933     0449 0062     8060 0615     4622 2389     ← 8-chunk → (L,R)
   └─┬──┘ └──┬──┘  └──┬──┘ └──┬──┘  └──┬──┘ └──┬──┘  └──┬──┘ └──┬──┘
-   L₀   R₀    L₁   R₁    L₂   R₂    L₃   R₃
+   L₁   R₁    L₂   R₂    L₃   R₃    L₄   R₄
     
   First left group without leading zeros: 556
 
-  Result: 3, L₀.L₁.L₂.L₃ : R₀.R₁.R₂.R₃
+  Result: 3, L₁.L₂.L₃.L₄ : R₁.R₂.R₃.R₄
          = 3,556.0449.8060.4622 : 8933.0062.0615.2389
+         (integer = 3, L₁ = 556 — together "3,556")
 ```
 
 ### Arithmetic
