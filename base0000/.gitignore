@@ -3,6 +3,8 @@
 
 # But allow these project files
 !/base10000.py
+!/tests/
+!/tests/*.py
 !/docs/
 !/docs/b10k_spec.md
 !/.gitignore
