@@ -640,7 +640,10 @@ def parse(s: str) -> B10K:
 
 
 def _parse_int(s: str, sign: int) -> B10K:
-    """Парсинг целого B10K (без запятой)."""
+    """Парсинг целого B10K (без запятой).
+
+    Группы отображаются MSB→LSB (старшие разряды первыми).
+    """
     split_pos = s.find(':')
     if split_pos < 0:
         left_part = ""
@@ -656,17 +659,19 @@ def _parse_int(s: str, sign: int) -> B10K:
         if not (0 <= v <= 9999):
             raise ValueError(f"цифра вне диапазона 0..9999: {v}")
 
-    # L не длиннее R (L ≤ R), может быть на 1 короче (L = R-1).
-    # Более короткую половину дополняем нулями справа (MSB-конец).
+    # L не длиннее R (L ≤ R). Дополняем более короткую половину
+    # нулями спереди (MSB-конец) для выравнивания.
     n = max(len(left_groups), len(right_groups))
-    left_groups += [0] * (n - len(left_groups))
-    right_groups += [0] * (n - len(right_groups))
+    left_groups = [0] * (n - len(left_groups)) + left_groups
+    right_groups = [0] * (n - len(right_groups)) + right_groups
 
-    # LE = [R₀, L₀, R₁, L₁, ...] — LSB→MSB, согласован с _format_int
-    le = []
+    # BE = [L₀, R₀, L₁, R₁, ...] — группы в порядке MSB→LSB
+    be = []
     for i in range(n):
-        le.append(right_groups[i])
-        le.append(left_groups[i])
+        be.append(left_groups[i])
+        be.append(right_groups[i])
+    # LE = reverse(BE) — для хранения (LSB→MSB)
+    le = list(reversed(be))
     le = _trim(le)
     if not le:
         le = [0]
@@ -813,7 +818,7 @@ def format_num(a: B10K, frac_pairs: int = 0) -> str:
       Пример: 0000:0005
     Формат (дробь): int_L.frac_L₀.frac_L₁...:int_R,.frac_R₀.frac_R₁...
       Пример: 0000.1415.3589.3846.3832:0003,.9265.7932.2643.7950
-    Порядок групп — от младших разрядов (LSB) к старшим.
+    Порядок групп — от старших разрядов (MSB) к младшим.
     """
     fp = frac_pairs or a.frac_pairs
     if fp > 0:
@@ -827,19 +832,31 @@ def format_num(a: B10K, frac_pairs: int = 0) -> str:
 def _format_int(a: B10K) -> str:
     """
     B10K → строка: L₀.L₁.L₂...:R₀.R₁.R₂...
-    Чётные четвёрки (L) слева от ':', нечётные (R) справа.
-    Порядок — от младших разрядов (LSB) к старшим.
+    L-группы (чётные четвёрки) слева от ':', R-группы (нечётные) справа.
+    Порядок — от старших разрядов (MSB) к младшим.
     """
     digs = a.digs
     L_groups = []
     R_groups = []
-    for i in range(0, len(digs), 2):
-        r = digs[i]
-        l = digs[i + 1] if i + 1 < len(digs) else 0
+    # LE = [Rₙ₋₁, Lₙ₋₁, ..., R₀, L₀] — LSB→MSB.
+    # Идём с конца (MSB) к началу (LSB).
+    i = len(digs) - 1
+    if i % 2 == 0:
+        # Нечётная длина: последний элемент — R без L
+        R_groups.append(f"{digs[i]:04d}")
+        i -= 1
+    while i >= 1:
+        r = digs[i - 1]  # Rₖ
+        l = digs[i]      # Lₖ
         R_groups.append(f"{r:04d}")
         L_groups.append(f"{l:04d}")
+        i -= 2
+    # L-групп может быть меньше — дополняем нулями спереди (MSB-конец)
+    if len(R_groups) > len(L_groups):
+        L_groups = ["0000"] * (len(R_groups) - len(L_groups)) + L_groups
     if not L_groups:
         L_groups.append("0000")
+    if not R_groups:
         R_groups.append("0000")
     return f"-{'.'.join(L_groups)}:{'.'.join(R_groups)}" if a.sign == -1 else f"{'.'.join(L_groups)}:{'.'.join(R_groups)}"
 
@@ -978,19 +995,27 @@ def format_frac(a: B10K, frac_pairs: int) -> str:
         frac_R.append(f"{r:04d}")
         frac_L.append(f"{l:04d}")
 
-    # ─── Целые пары: LE от LSB к MSB ───
+    # ─── Целые пары: идём с конца (MSB) к началу (LSB) ───
     int_L = []
     int_R = []
-    for i in range(n_frac_le, len(digs), 2):
-        r = digs[i]
-        l = digs[i + 1] if i + 1 < len(digs) else 0
-        int_R.append(f"{r:04d}")
-        int_L.append(f"{l:04d}")
+    i = len(digs) - 1
+    if i >= n_frac_le and (i - n_frac_le) % 2 == 0:
+        # Нечётная длина целой части: последний элемент — R без L
+        int_R.append(f"{digs[i]:04d}")
+        i -= 1
+    while i >= n_frac_le:
+        # digs[i-1] = R, digs[i] = L
+        int_R.append(f"{digs[i - 1]:04d}")
+        int_L.append(f"{digs[i]:04d}")
+        i -= 2
+    # L-групп может быть меньше — дополняем нулями спереди (MSB-конец)
+    if len(int_R) > len(int_L):
+        int_L = ["0000"] * (len(int_R) - len(int_L)) + int_L
 
     sign_str = "-" if a.sign == -1 else ""
 
     # L side: int_L первой, затем дробные L-группы, все разделены точками
-    L_str = ".".join(int_L) if int_L else "0"
+    L_str = ".".join(int_L) if int_L else ("0" if not frac_L else "0000")
     if frac_L:
         L_str += "." + ".".join(frac_L)
 
@@ -1361,7 +1386,7 @@ if __name__ == "__main__":
     print("=== Сложение / вычитание ===")
     test("1",   "0000:0005", "0000:0003", '+', "0000:0008")
     test("2",   "0000:9999", "0000:0001", '+', "0001:0000")
-    test("3",   "9999:9999", "0000:0001", '+', "0000.0000:0000.0001")
+    test("3",   "9999:9999", "0000:0001", '+', "0000.0000:0001.0000")
     test("4",   "0000:0005", "0000:0003", '-', "0000:0002")
     test("5",   "0001:0000", "0000:0001", '-', "0000:9999")
     test("6",   "0000:0005", "-0000:0003", '+', "0000:0002")
@@ -1372,13 +1397,13 @@ if __name__ == "__main__":
     test("9",   "0000:0005", "0000:0003", '*', "0000:0015")
     test("10",  "0000:0012", "0000:0012", '*', "0000:0144")
     test("11",  "0000:9999", "0000:9999", '*', "9998:0001")
-    test("12",  "9999:9999", "9999:9999", '*', "0000.9999:0001.9998")
-    test("13",  "0001:0000", "0001:0000", '*', "0000.0000:0000.0001")
+    test("12",  "9999:9999", "9999:9999", '*', "9999.0000:9998.0001")
+    test("13",  "0001:0000", "0001:0000", '*', "0000.0000:0001.0000")
     test("14",  "-0000:0003", "0000:0005", '*', "-0000:0015")
 
     print("\n=== Деление и остаток ===")
     test("15",  "9998:0001", "0000:9999", '/', "0000:9999")
-    test("16",  "0000.0000:0000.0001", "0001:0000", '/', "0001:0000")
+    test("16",  "0000.0000:0001.0000", "0001:0000", '/', "0001:0000")
     test("17",  "0001:0000", "0000:0003", '/', "0000:3333")
     test("18",  "0000:0015", "0000:0003", '/', "0000:0005")
     test("19",  "0000:0010", "0000:0003", '/', "0000:0003")
