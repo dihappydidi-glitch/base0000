@@ -113,13 +113,16 @@ B10K stores the fractional part **not as a sum of powers of 10000**, but as **de
 
 **Formatting algorithm (internal → B10K string):**
 
-The internal storage (`digs` array, little-endian — least significant group at index 0) is traversed from the **MSB end** (rightmost index) to the LSB:
+The `digs` array (little-endian — index 0 = least significant group) stores groups from LSB to MSB. To format:
 
-1. If the number of LE elements is odd — the MSB element is an R-group (odd index in BE → right half)
-2. Remaining elements are collected in pairs: **(L, R)** from each 2-element segment, MSB→LSB
-3. If more R-groups than L-groups were collected, `"0000"` groups are **prepended** to the left half (MSB end) to equalize counts
-4. Groups are formatted as 4-digit zero-padded strings
-5. Result: `L₀.L₁… : R₀.R₁…`
+1. Walk from the **most significant** group (last array index) toward index 0
+2. Elements form **(R, L) pairs**. From each pair collect:
+   — first element → R-group (right half)
+   — second element → L-group (left half)
+3. The most significant (leftmost in display) pair may be incomplete — an R-group without a corresponding L-group. This happens when the original decimal digits didn't fill the last 8-digit chunk completely.
+4. If R-groups outnumber L-groups, `"0000"` groups are **prepended** to the left half at the MSB end to equalize counts
+5. Each group is formatted as a 4-digit zero-padded string
+6. Result: `L₀.L₁… : R₀.R₁…`
 
 ### Direction of Processing: "from the end, least significant first"
 
