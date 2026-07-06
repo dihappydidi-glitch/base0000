@@ -986,7 +986,7 @@ def _repl():
                 result = pi_b10k(pi_pairs)
                 s = format_num(result, frac_pairs=pi_pairs)
                 print(f"  {s}")
-                return None
+                return result
             else:
                 print(f"  неизвестная функция: {func_name}")
                 return None
