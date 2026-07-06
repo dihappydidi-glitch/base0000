@@ -288,6 +288,26 @@ def _mul_small(a: List[int], d: int) -> List[int]:
     return _trim(res)
 
 
+def _div_small_abs(a: List[int], d: int) -> List[int]:
+    """a // d (целочисленно), a >= 0, 0 < d < BASE.
+
+    Эффективнее общего _div_mod_abs — O(n) вместо O(n²).
+    """
+    if d == 0:
+        raise ZeroDivisionError("division by zero")
+    if d == 1:
+        return list(a)
+    res_be = []
+    rem = 0
+    for da in reversed(a):  # от старших LE-разрядов (BE порядок)
+        cur = rem * BASE + da
+        res_be.append(cur // d)
+        rem = cur % d
+    # BE → LE
+    le = list(reversed(res_be))
+    return _trim(le)
+
+
 def _div_mod_abs(a: List[int], b: List[int]) -> Tuple[List[int], List[int]]:
     """a / b, a >= 0, b > 0. Возвращает (частное, остаток)."""
     cmp = _cmp_abs(a, b)
@@ -882,7 +902,8 @@ def _repl():
     print("=== base-10000 REPL ===")
     print("Вводите выражения вида:  0000:0005 + 0000:0003")
     print("Поддерживается: + - * / % ** //")
-    print("Функции: fact(n)  gcd(a,b)  lcm(a,b)  isqrt(n)  tod(n)")
+    print("Функции: fact(n)  gcd(a,b)  lcm(a,b)  isqrt(n)  tod(n)  pi(pairs)")
+    print("  pi(10) — π с 10 парами цифр (80 десятичных); pi() — 10 пар")
     print("Переменные: обозначаются буквами, сохраняются через =")
     print("  x = 0000:0100")
     print("  x * x")
@@ -952,6 +973,19 @@ def _repl():
             elif func_name in ('tod', 'to_dec'):
                 result = to_dec(args[0])
                 print(f"  {result}")
+                return None
+            elif func_name == 'pi':
+                pi_pairs = 20
+                if len(args) == 1:
+                    pi_pairs = to_int(args[0])
+                    if pi_pairs < 1:
+                        pi_pairs = 20
+                elif len(args) > 1:
+                    print("  pi([pairs]) — число пар (по умолчанию 20)")
+                    return None
+                result = pi_b10k(pi_pairs)
+                s = format_num(result, frac_pairs=pi_pairs)
+                print(f"  {s}")
                 return None
             else:
                 print(f"  неизвестная функция: {func_name}")
@@ -1026,6 +1060,65 @@ def _repl():
     except KeyboardInterrupt:
         print()
     print("Пока!")
+
+
+def _arctan_scaled_b10k(x: B10K, x_sq: int, S: B10K) -> B10K:
+    """Вычислить arctan(1/x) × S через ряд (B10K-арифметика).
+
+    Ряд: arctan(1/x) = 1/x - 1/(3·x³) + 1/(5·x⁵) - 1/(7·x⁷) + …
+
+    x_sq — Python int (маленький делитель, деление O(n)).
+    S — B10K, содержит масштаб BASE^(2·(pairs+1)).
+    """
+    # S / x как B10K (первое деление — полноценное, x может быть многозначным)
+    numerator = div(S, x)
+    result = _zero()
+    k = 0
+    while not _is_zero(numerator):
+        # term = numerator // (2k+1) — маленький делитель
+        t_digs = _div_small_abs(numerator.digs, 2 * k + 1)
+        term = B10K(sign=1, digs=t_digs) if t_digs != [0] else _zero()
+
+        if k % 2 == 0:
+            result = add(result, term)
+        else:
+            result = sub(result, term)
+
+        # numerator //= x_sq — маленький делитель
+        numerator = B10K(sign=1, digs=_div_small_abs(numerator.digs, x_sq))
+        k += 1
+    return result
+
+
+def pi_b10k(pairs: int = 20) -> B10K:
+    """Вычислить π как B10K с заданным числом пар цифр.
+
+    Формула Machin: π = 16·arctg(1/5) − 4·arctg(1/239)
+    Все вычисления — через B10K-арифметику.
+
+    Каждая пара даёт 2 группы по 4 десятичных цифры,
+    то есть 8 десятичных цифр π на пару.
+    Пример: pi(4) → 32 десятичных цифры π.
+
+    В REPL: pi(10) — 10 пар (80 десятичных цифр).
+    """
+    # Считаем с одной запасной парой для округления
+    S = pow_b10k(_from_int(BASE), _from_int(2 * (pairs + 1)))
+
+    x5 = _from_int(5)
+    x239 = _from_int(239)
+    a5 = _arctan_scaled_b10k(x5, 25, S)        # x_sq — int, малый делитель
+    a239 = _arctan_scaled_b10k(x239, 57121, S)
+
+    # π × S = 16·a5 − 4·a239
+    result = sub(mul(_from_int(16), a5), mul(_from_int(4), a239))
+
+    # Отбросить запасную пару: сдвинуть LE-массив вправо на 2 цифры
+    result = B10K(sign=result.sign, digs=_shift_right_abs(result.digs, 2))
+    if not result.digs:
+        result = B10K(sign=1, digs=[0])
+
+    return result
 
 
 # Публичный entry point для REPL (используется в b10k CLI)
