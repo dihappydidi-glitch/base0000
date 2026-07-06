@@ -665,13 +665,11 @@ def _parse_int(s: str, sign: int) -> B10K:
     left_groups = [0] * (n - len(left_groups)) + left_groups
     right_groups = [0] * (n - len(right_groups)) + right_groups
 
-    # BE = [L₀, R₀, L₁, R₁, ...] — группы в порядке MSB→LSB
-    be = []
-    for i in range(n):
-        be.append(left_groups[i])
-        be.append(right_groups[i])
-    # LE = reverse(BE) — для хранения (LSB→MSB)
-    le = list(reversed(be))
+    # LE = [Rₙ₋₁, Lₙ₋₁, ..., R₀, L₀] — LSB→MSB для хранения
+    le = []
+    for i in range(n - 1, -1, -1):
+        le.append(right_groups[i])
+        le.append(left_groups[i])
     le = _trim(le)
     if not le:
         le = [0]
@@ -720,11 +718,10 @@ def _parse_frac(s: str, sign: int) -> B10K:
                            if len(left_groups_str) < n else left_groups_str)
             right_padded = (['0'] * (n - len(right_groups_str)) + right_groups_str
                             if len(right_groups_str) < n else right_groups_str)
-            be = []
-            for i in range(n):
-                be.append(int(left_padded[i].lstrip('0') or '0'))
-                be.append(int(right_padded[i].lstrip('0') or '0'))
-            frac_le = list(reversed(be))
+            frac_le = []
+            for i in range(n - 1, -1, -1):
+                frac_le.append(int(right_padded[i].lstrip('0') or '0'))
+                frac_le.append(int(left_padded[i].lstrip('0') or '0'))
             frac_le = _trim(frac_le) if frac_le else [0]
             combined = _shift_left_abs(int_b10k.digs, 2 * n)
             combined = _add_abs(combined, frac_le)
@@ -756,12 +753,11 @@ def _parse_frac(s: str, sign: int) -> B10K:
         right_padded = (['0'] * (n - len(right_groups_str)) + right_groups_str
                         if len(right_groups_str) < n else right_groups_str)
 
-        be = []
-        for i in range(n):
-            be.append(int(left_padded[i].lstrip('0') or '0'))
-            be.append(int(right_padded[i].lstrip('0') or '0'))
+        frac_le = []
+        for i in range(n - 1, -1, -1):
+            frac_le.append(int(right_padded[i].lstrip('0') or '0'))
+            frac_le.append(int(left_padded[i].lstrip('0') or '0'))
 
-        frac_le = list(reversed(be))
         frac_le = _trim(frac_le) if frac_le else [0]
         combined = _shift_left_abs(int_b10k.digs, 2 * n)
         combined = _add_abs(combined, frac_le)
@@ -793,12 +789,11 @@ def _parse_frac(s: str, sign: int) -> B10K:
     right_padded = (right_groups_str + ['0'] * (n - len(right_groups_str))
                     if len(right_groups_str) < n else right_groups_str)
 
-    be = []
-    for i in range(n):
-        be.append(int(left_padded[i].lstrip('0') or '0'))
-        be.append(int(right_padded[i].lstrip('0') or '0'))
+    frac_le = []
+    for i in range(n - 1, -1, -1):
+        frac_le.append(int(right_padded[i].lstrip('0') or '0'))
+        frac_le.append(int(left_padded[i].lstrip('0') or '0'))
 
-    frac_le = list(reversed(be))
     frac_le = _trim(frac_le) if frac_le else [0]
     combined = _shift_left_abs(int_b10k.digs, 2 * n)
     combined = _add_abs(combined, frac_le)
