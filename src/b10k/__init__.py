@@ -789,7 +789,7 @@ def to_dec(a: B10K, frac_pairs: Optional[int] = None) -> str:
 _b10k_to_int = to_int  # обратная совместимость
 
 
-def format_frac(a: B10K, frac_pairs: int, comma_in_left: bool = True) -> str:
+def format_frac(a: B10K, frac_pairs: int, comma_in_left: bool = False) -> str:
     """
     B10K → строка с дробной частью.
 
@@ -800,13 +800,10 @@ def format_frac(a: B10K, frac_pairs: int, comma_in_left: bool = True) -> str:
       a — B10K, где объединены целая и дробная части (LE: старшие =
            целая часть, младшие = дробная часть)
       frac_pairs — число пар (L,R) в дробной части
-      comma_in_left — True (по умолчанию): запятая в левой половине
-                      False: запятая в правой половине
+      comma_in_left — True: запятая после L₁; False (по умолч.): запятая после R₁
 
     Примеры:
-      format_frac(a, 4)                → "6,708.3249.0892.1006:2039.9369.2752.1938"
-      format_frac(a, 4, comma_in_left=False)
-        → "708.3249.0892.1006:6,2039.9369.2752.1938"
+      format_frac(a, 4)                → "0000.1415.3589.3846.3832:0003,9265.7932.2643.7950"
     """
     if _is_zero(a):
         return "0000:0000"
@@ -816,18 +813,22 @@ def format_frac(a: B10K, frac_pairs: int, comma_in_left: bool = True) -> str:
 
     if n_frac_le >= n_le:
         # Целая часть = 0, всё число — дробное
-        int_val = 0
         pad = [0] * (n_frac_le - n_le)
         frac_digs_rev = list(reversed(pad + a.digs))
+        # Целая часть — нулевая: парная половинка (L,R) = 0000,0000
+        int_L = "0000"
+        int_R = "0000"
     else:
         int_digs = a.digs[n_frac_le:]
         frac_digs = a.digs[:n_frac_le]
-
-        int_val = _b10k_to_int(B10K(1, int_digs)) * a.sign
-        if int_val < 0:
-            int_val = -int_val
-
         frac_digs_rev = list(reversed(frac_digs))
+
+        # Целую часть превращаем в пару (L,R) с дополнением до 4 цифр
+        int_be = list(reversed(int_digs))
+        if len(int_be) % 2 != 0:
+            int_be.insert(0, 0)
+        int_L = f"{int_be[0]:04d}"
+        int_R = f"{int_be[1]:04d}"
 
     # BE → десятичные цифры дробной части: pad4, concat, lstrip('0')
     frac_dec = ''.join(f"{g:04d}" for g in frac_digs_rev).lstrip('0')
@@ -853,14 +854,17 @@ def format_frac(a: B10K, frac_pairs: int, comma_in_left: bool = True) -> str:
     # Первая левая группа — без ведущих нулей
     left_groups[0] = left_groups[0].lstrip('0') or '0'
 
-    left_str = '.'.join(left_groups)
-    right_str = '.'.join(right_groups)
     sign_str = "-" if a.sign == -1 else ""
 
+    # Два варианта записи с запятой как десятичным разделителем:
+    #   comma_in_left=True:  L₁, L₂.L₃…:R₁.R₂.R₃…
+    #   comma_in_left=False: L₁.L₂.L₃…:R₁,.R₂.R₃…  (по умолчанию)
     if comma_in_left:
-        return f"{sign_str}{int_val},{left_str}:{right_str}"
+        right_with_int = [int_R] + right_groups
+        return f"{sign_str}{int_L},{'.'.join(left_groups)}:{'.'.join(right_with_int)}"
     else:
-        return f"{sign_str}{left_str}:{int_val},{right_str}"
+        left_with_int = [int_L] + left_groups
+        return f"{sign_str}{'.'.join(left_with_int)}:{int_R},{'.' + '.'.join(right_groups)}"
 
 
 # ─── короткие псевдонимы ──────────────────────────────────
