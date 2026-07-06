@@ -637,12 +637,28 @@ def parse_frac(s: str) -> B10K:
     return parse(s)
 
 
-def _b10k_to_int(a: B10K) -> int:
-    """B10K → Python int (для внутреннего использования)."""
+def to_int(a: B10K) -> int:
+    """B10K → Python int."""
     if _is_zero(a):
         return 0
     n = sum(d * (BASE ** i) for i, d in enumerate(a.digs))
     return n * a.sign
+
+
+def to_dec(a: B10K) -> str:
+    """B10K → десятичная строка (для целых чисел).
+
+    Пример: to_dec(B("0000:0120")) → "120"
+            to_dec(B("9999.9999:0000.0000")) → "9999000099990000"
+    """
+    if _is_zero(a):
+        return "0"
+    n = sum(d * (BASE ** i) for i, d in enumerate(a.digs))
+    s = str(n)
+    return f"-{s}" if a.sign == -1 else s
+
+
+_b10k_to_int = to_int  # обратная совместимость
 
 
 def format_frac(a: B10K, frac_pairs: int, comma_in_left: bool = True) -> str:
@@ -808,7 +824,7 @@ def _repl():
     print("=== base-10000 REPL ===")
     print("Вводите выражения вида:  0000:0005 + 0000:0003")
     print("Поддерживается: + - * / % ** //")
-    print("Функции: fact(n)  gcd(a,b)  lcm(a,b)  isqrt(n)")
+    print("Функции: fact(n)  gcd(a,b)  lcm(a,b)  isqrt(n)  tod(n)")
     print("Переменные: обозначаются буквами, сохраняются через =")
     print("  x = 0000:0100")
     print("  x * x")
@@ -875,6 +891,10 @@ def _repl():
                 result = lcm(args[0], args[1])
             elif func_name == 'isqrt':
                 result = isqrt(args[0])
+            elif func_name in ('tod', 'to_dec'):
+                result = to_dec(args[0])
+                print(f"  {result}")
+                return None
             else:
                 print(f"  неизвестная функция: {func_name}")
                 return None
