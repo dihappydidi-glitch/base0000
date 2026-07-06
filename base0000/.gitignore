@@ -1,0 +1,29 @@
+# Ignore everything by default
+/*
+
+# But allow these project files
+!/base10000.py
+!/docs/
+!/docs/b10k_spec.md
+!/.gitignore
+!/.gitattributes
+!/README.md
+!/pyproject.toml
+!/LICENSE
+!/src/
+!/src/b10k/
+!/src/b10k/__init__.py
+!/src/b10k/py.typed
+
+# Still ignore common junk
+NTUSER.DAT*
+*.TM.blf
+*.regtrans-ms
+*.TMContainer*
+__pycache__/
+*.py[cod]
+
+# Build artifacts (already ignored by /*, explicit for safety)
+dist/
+*.egg-info/
+build/

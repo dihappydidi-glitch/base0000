@@ -1,19 +1,20 @@
 # Ignore everything by default
 /*
 
-# But allow these project files
-!/base10000.py
-!/docs/
-!/docs/b10k_spec.md
-!/.gitignore
-!/.gitattributes
-!/README.md
-!/pyproject.toml
-!/LICENSE
-!/src/
-!/src/b10k/
-!/src/b10k/__init__.py
-!/src/b10k/py.typed
+# Allow the base0000 project directory
+!/base0000/
+/base0000/*
+!/base0000/base10000.py
+!/base0000/docs/
+!/base0000/src/
+!/base0000/src/b10k/
+!/base0000/src/b10k/__init__.py
+!/base0000/src/b10k/py.typed
+!/base0000/.gitignore
+!/base0000/.gitattributes
+!/base0000/README.md
+!/base0000/pyproject.toml
+!/base0000/LICENSE
 
 # Still ignore common junk
 NTUSER.DAT*
@@ -23,7 +24,7 @@ NTUSER.DAT*
 __pycache__/
 *.py[cod]
 
-# Build artifacts (already ignored by /*, explicit for safety)
+# Build artifacts
 dist/
 *.egg-info/
 build/

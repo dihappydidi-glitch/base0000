@@ -892,6 +892,29 @@ def parse_frac(s: str) -> B10K:
     return b
 
 
+def _digs_to_dec(digs: List[int], min_pad: int = 0) -> str:
+    """B10K LE-цифры → десятичная строка, без Python int.
+
+    Каждая BASE-10000 цифра 0..9999 даёт ровно 4 десятичных разряда
+    (кроме самой старшей). LE → LSB→MSB, каждая цифра → 4 цифры,
+    последняя (старшая) — без ведущих нулей, затем реверс.
+
+    min_pad — дополнить слева нулями до этой длины.
+    """
+    if not digs or (len(digs) == 1 and digs[0] == 0):
+        return "0".zfill(min_pad) if min_pad else "0"
+    parts = []
+    for i, d in enumerate(digs):
+        if i < len(digs) - 1:
+            parts.append(f"{d:04d}")
+        else:
+            parts.append(str(d))
+    s = ''.join(reversed(parts))
+    if min_pad and len(s) < min_pad:
+        s = s.zfill(min_pad)
+    return s
+
+
 def to_int(a: B10K) -> int:
     """B10K → Python int."""
     if _is_zero(a):
@@ -935,19 +958,16 @@ def to_dec(a: B10K, frac_pairs: Optional[int] = None) -> str:
 
         # Целая часть
         if int_digs:
-            int_n = sum(d * (BASE ** i) for i, d in enumerate(int_digs))
-            int_str = str(int_n)
+            int_str = _digs_to_dec(int_digs)
         else:
             int_str = "0"
 
         # Дробная часть — каждая пара даёт 8 десятичных цифр
-        frac_n = sum(d * (BASE ** i) for i, d in enumerate(frac_digs))
-        frac_str = str(frac_n).zfill(8 * frac_pairs)
+        frac_str = _digs_to_dec(frac_digs, 8 * frac_pairs)
 
         s = f"{int_str}.{frac_str}"
     else:
-        n = sum(d * (BASE ** i) for i, d in enumerate(digs))
-        s = str(n)
+        s = _digs_to_dec(digs)
 
     return f"-{s}" if a.sign == -1 else s
 
@@ -1112,11 +1132,13 @@ def _repl():
     print("Вводите выражения вида:  0000:0005 + 0000:0003")
     print("Поддерживается: + - * / % ** //")
     print("Функции: fact(n)  gcd(a,b)  lcm(a,b)  isqrt(n)  sqrt(x [,pairs])  tod(n [,pairs])  pi(pairs)")
-    print("  pi(10) — pi с 10 парами цифр (80 десятичных); pi() — 10 пар")
+    print("  pi(10) — пи с 10 парами цифр (80 десятичных); pi() — 10 пар")
+    print("  sqrt(x) — целочисленный sqrt; sqrt(x, n) — sqrt с n дробными парами")
     print("  tod(x) — десятичная строка; tod(x, 4) — с дробной точкой (4 пары)")
     print("Переменные: обозначаются буквами, сохраняются через =")
     print("  x = 0000:0100")
     print("  x * x")
+    print("Формат вывода: $fmt = dec | b10k | auto (по умолчанию)")
     print("Выход: Ctrl+C или .exit")
     print()
 
@@ -1132,15 +1154,26 @@ def _repl():
     }
 
     vars_dict = {}
+    _fmt_mode = 'auto'  # 'auto' | 'b10k' | 'dec'
 
     def eval_expr(tokens):
         """Simple expression evaluator: function(args), a op b, variable, or literal."""
+        nonlocal _fmt_mode
         if not tokens:
             return None
 
         # Присваивание: name = expr
         if len(tokens) >= 3 and tokens[1] == '=':
             name = tokens[0]
+            # $fmt — специальная переменная формата вывода (не identifier)
+            if name == '$fmt':
+                mode = tokens[2].lower()
+                if mode in ('b10k', 'dec', 'auto'):
+                    _fmt_mode = mode
+                    print(f"  формат: {mode}")
+                else:
+                    print(f"  допустимо: b10k, dec, auto")
+                return None
             if not name.isidentifier():
                 print(f"  неверное имя: {name}")
                 return None
@@ -1153,22 +1186,47 @@ def _repl():
         # Функции: func_name ( args )
         if (len(tokens) >= 3 and tokens[0].isidentifier()
                 and tokens[1] == '(' and ')' in tokens):
-            close_idx = tokens.index(')')
+            # Найти парную закрывающую скобку (учёт вложенности)
+            depth = 1
+            close_idx = None
+            for i in range(2, len(tokens)):
+                if tokens[i] == '(':
+                    depth += 1
+                elif tokens[i] == ')':
+                    depth -= 1
+                    if depth == 0:
+                        close_idx = i
+                        break
+            if close_idx is None:
+                print("  несбалансированные скобки")
+                return None
+
             func_name = tokens[0]
             raw_args = tokens[2:close_idx]
-            # отделяем аргументы (через запятую или пробел)
-            arg_str = ' '.join(raw_args).replace(',', ' ').replace('  ', ' ')
-            arg_tokens = [t for t in arg_str.split() if t]
+
+            # Разделить аргументы по запятым (вне скобок)
             args = []
-            for t in arg_tokens:
-                if t in vars_dict:
-                    args.append(vars_dict[t])
-                else:
-                    try:
-                        args.append(parse(t))
-                    except Exception:
-                        print(f"  не удалось разобрать: {t}")
+            cur = []
+            d = 0
+            for t in raw_args:
+                if t == ',' and d == 0:
+                    v = eval_expr(cur)
+                    if v is None:
                         return None
+                    args.append(v)
+                    cur = []
+                else:
+                    if t == '(':
+                        d += 1
+                    elif t == ')':
+                        d -= 1
+                    cur.append(t)
+            if cur:
+                v = eval_expr(cur)
+                if v is None:
+                    return None
+                args.append(v)
+
             # остаток выражения после )
             rest = eval_expr(tokens[close_idx + 1:])
 
@@ -1203,17 +1261,15 @@ def _repl():
                 print(f"  {result}")
                 return None
             elif func_name == 'pi':
-                pi_pairs = 20
+                pi_pairs = 10
                 if len(args) == 1:
                     pi_pairs = to_int(args[0])
-                    if pi_pairs < 1:
-                        pi_pairs = 20
                 elif len(args) > 1:
-                    print("  pi([pairs]) — число пар (по умолчанию 20)")
+                    print("  pi([pairs]) — число пар (по умолчанию 10)")
                     return None
+                if pi_pairs < 1:
+                    pi_pairs = 1
                 result = pi_b10k(pi_pairs)
-                s = format_num(result, frac_pairs=pi_pairs)
-                print(f"  {s}")
                 return result
             else:
                 print(f"  неизвестная функция: {func_name}")
@@ -1271,7 +1327,7 @@ def _repl():
 
             try:
                 # чистим BOM и непечатные символы (PowerShell)
-                while line and not (line[0].isdigit() or line[0] in '-.:' or line[0].isalpha()):
+                while line and not (line[0].isdigit() or line[0] in '-.:$' or line[0].isalpha()):
                     line = line[1:]
                 line = line.strip()
                 # разбиваем на токены, сохраняя скобки
@@ -1281,7 +1337,16 @@ def _repl():
 
                 result = eval_expr(tokens)
                 if result is not None:
-                    print(f"  {format_num(result)}")
+                    if _fmt_mode == 'b10k':
+                        print(f"  {format_num(result)}")
+                    elif _fmt_mode == 'dec':
+                        print(f"  {to_dec(result)}")
+                    else:  # auto
+                        fp = result.frac_pairs if hasattr(result, 'frac_pairs') else 0
+                        if fp > 0:
+                            print(f"  {to_dec(result)}")
+                        else:
+                            print(f"  {format_num(result)}")
             except Exception as e:
                 print(f"  ошибка: {e}")
 
@@ -1355,7 +1420,10 @@ main_repl = _repl
 
 if __name__ == "__main__":
     import sys
-    if '--repl' in sys.argv:
+    # По умолчанию — REPL; --test для тестов
+    if '--test' in sys.argv:
+        pass  # ниже тесты
+    else:
         _repl()
         sys.exit(0)
 
