@@ -1079,6 +1079,8 @@ python base10000.py --repl
 Enter expressions like:  0000:0005 + 0000:0003
 Supported: + - * / % ** //
 Functions: fact(n)  gcd(a,b)  lcm(a,b)  isqrt(n)
+         sqrt(x [,pairs])  tod(n [,pairs])  pi(pairs)
+         fib(n)  e(pairs)  sin(x [,pairs])  cos(x [,pairs])
 Variables: letters, saved with =
   x = 0000:0100
   x * x
@@ -1115,6 +1117,10 @@ All functions are available in the REPL and as Python import (`from b10k import 
 | `gcd` | `a, b` — B10K integers | Greatest common divisor (Euclidean algorithm). | B10K integer |
 | `lcm` | `a, b` — B10K integers | Least common multiple. `lcm(a,b) = a·b / gcd(a,b)`. | B10K integer |
 | `isqrt` | `n` — B10K integer | Integer square root ⌊√n⌋ (Newton's method). | B10K integer |
+| `fib` | `n` — B10K integer (≥0) | Fibonacci number F(n) via fast doubling, O(log n). `fib(0)` = 0, `fib(1)` = 1, `fib(1000)` = a 209-digit number. | B10K integer |
+| `e` | `pairs` — number of digit pairs (default 10) | Euler's number e = Σ 1/k! via Taylor series. `e(10)` = 80 digits, `e(20)` = 160 digits. | fractional B10K |
+| `sin` | `x` — B10K number (radians); `pairs` — fractional pairs (default 10) | Sine via Taylor series: x − x³/3! + x⁵/5! − … Supports fractional x (e.g. `sin(pi_b10k(10)/2)`) and integer x. | fractional B10K |
+| `cos` | `x` — B10K number (radians); `pairs` — fractional pairs (default 10) | Cosine via Taylor series: 1 − x²/2! + x⁴/4! − … Supports fractional and integer x. | fractional B10K |
 
 ### Output Format Selection (`$fmt`)
 
@@ -1162,6 +1168,10 @@ Additional functions:
 | `gcd(a, b)` | greatest common divisor (Euclidean algorithm) |
 | `lcm(a, b)` | least common multiple |
 | `isqrt(a)` | integer square root (Newton's method) |
+| `fib(n)` | Fibonacci number F(n) — fast doubling O(log n) |
+| `e(pairs)` | Euler's number — Taylor series Σ 1/k! |
+| `sin(x, pairs)` | sine — Taylor series x − x³/3! + x⁵/5! − … |
+| `cos(x, pairs)` | cosine — Taylor series 1 − x²/2! + x⁴/4! − … |
 | `shift_left(a, k)` | left shift: a × 10000ᵏ |
 | `shift_right(a, k)` | right shift: a ∥ 10000ᵏ |
 

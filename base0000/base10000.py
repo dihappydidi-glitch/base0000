@@ -427,6 +427,11 @@ def div_mod(a: B10K, b: B10K) -> Tuple[B10K, B10K]:
     q = B10K(sign=1 if a.sign == b.sign else -1, digs=q_digs)
     r = B10K(sign=a.sign, digs=_trim(r_digs))  # остаток = знак делимого
 
+    # Сохраняем дробность: если b — целое, результат сохраняет a.frac_pairs
+    if b.frac_pairs == 0:
+        q.frac_pairs = a.frac_pairs
+        r.frac_pairs = a.frac_pairs
+
     # Евклидова коррекция: 0 <= r < |b|
     if r.sign == -1 and not _is_zero(r):
         # q = q - sign(b),  r = r + |b|
@@ -1135,6 +1140,9 @@ def _repl():
     print("  pi(10) — пи с 10 парами цифр (80 десятичных); pi() — 10 пар")
     print("  sqrt(x) — целочисленный sqrt; sqrt(x, n) — sqrt с n дробными парами")
     print("  tod(x) — десятичная строка; tod(x, 4) — с дробной точкой (4 пары)")
+    print("  e(pairs) — Эйлерово число e (pairs = число пар)")
+    print("  fib(n) — число Фибоначчи F(n)")
+    print("  sin(x, pairs) — синус (радианы); cos(x, pairs) — косинус")
     print("Переменные: обозначаются буквами, сохраняются через =")
     print("  x = 0000:0100")
     print("  x * x")
@@ -1271,6 +1279,38 @@ def _repl():
                     pi_pairs = 1
                 result = pi_b10k(pi_pairs)
                 return result
+            elif func_name == 'fib':
+                if len(args) != 1:
+                    print("  fib(n) — число Фибоначчи F(n)")
+                    return None
+                result = fib_b10k(args[0])
+            elif func_name == 'e':
+                e_pairs = 10
+                if len(args) == 1:
+                    e_pairs = to_int(args[0])
+                elif len(args) > 1:
+                    print("  e([pairs]) — число пар (по умолчанию 10)")
+                    return None
+                if e_pairs < 1:
+                    e_pairs = 1
+                result = e_b10k(e_pairs)
+                return result
+            elif func_name == 'sin':
+                if len(args) == 1:
+                    result = sin_b10k(args[0])
+                elif len(args) == 2:
+                    result = sin_b10k(args[0], to_int(args[1]))
+                else:
+                    print("  sin(x [, pairs]) — синус x радиан с pairs парами")
+                    return None
+            elif func_name == 'cos':
+                if len(args) == 1:
+                    result = cos_b10k(args[0])
+                elif len(args) == 2:
+                    result = cos_b10k(args[0], to_int(args[1]))
+                else:
+                    print("  cos(x [, pairs]) — косинус x радиан с pairs парами")
+                    return None
             else:
                 print(f"  неизвестная функция: {func_name}")
                 return None
@@ -1412,6 +1452,190 @@ def pi_b10k(pairs: int = 20) -> B10K:
     if not result.digs:
         result = B10K(sign=1, digs=[0], frac_pairs=pairs)
 
+    return result
+
+
+# ═══════════════════════════════════════════════════════════
+#  НОВЫЕ ФУНКЦИИ
+# ═══════════════════════════════════════════════════════════
+
+def fib_b10k(n: B10K) -> B10K:
+    """Число Фибоначчи F(n), быстрый метод удвоения O(log n).
+
+    F(2k)   = F(k)·(2·F(k+1) − F(k))
+    F(2k+1) = F(k+1)² + F(k)²
+
+    n >= 0.  n=0 → 0, n=1 → 1.
+    """
+    if _is_zero(n) or n.sign < 0:
+        return _zero()
+    k = to_int(n)
+    if k < 0:
+        return _zero()
+
+    def _fib_pair(k: int) -> Tuple[B10K, B10K]:
+        """(F(k), F(k+1))"""
+        if k == 0:
+            return (_zero(), _from_int(1))
+        fa, fb = _fib_pair(k >> 1)
+        # c = F(2k)   = fa·(2·fb − fa)
+        # d = F(2k+1) = fb² + fa²
+        c = mul(fa, sub(mul(_from_int(2), fb), fa))
+        d = add(mul(fb, fb), mul(fa, fa))
+        if k & 1 == 0:
+            return (c, d)
+        else:
+            return (d, add(c, d))
+
+    return _fib_pair(k)[0]
+
+
+def e_b10k(pairs: int = 10) -> B10K:
+    """Вычислить e (основание натурального логарифма) как B10K.
+
+    Ряд: e = Σ_{k=0}^{∞} 1/k!
+    Вычисляется в масштабе S = BASE^(2·(pairs+1)) с помощью
+    _div_small_abs (O(n) на итерацию).
+
+    Пример: e_b10k(4) — e с 4 парами (32 десятичных цифры).
+    """
+    # Масштаб: S = BASE^(2·(pairs+1))
+    S = pow_b10k(_from_int(BASE), _from_int(2 * (pairs + 1)))
+
+    result = S  # k=0: 1/0! × S = S
+    term = S
+    k = 1
+    while True:
+        term = B10K(sign=1, digs=_div_small_abs(term.digs, k))
+        if _is_zero(term):
+            break
+        result = add(result, term)
+        k += 1
+
+    # Отбросить запасную пару
+    result = B10K(sign=1, digs=_shift_right_abs(result.digs, 2),
+                  frac_pairs=pairs)
+    if not result.digs:
+        result = B10K(sign=1, digs=[0], frac_pairs=pairs)
+    return result
+
+
+def sin_b10k(x: B10K, pairs: int = 10) -> B10K:
+    """sin(x) с точностью до `pairs` дробных пар.
+
+    Ряд Тейлора  sin(x) = x − x³/3! + x⁵/5! − x⁷/7! + …
+    x может быть B10K с frac_pairs (дробное значение) или целым (радианы).
+
+    Пример: sin(B("0000:0001"), 10) — sin(1 rad) с 10 парами.
+            sin(pi_b10k(10), 10) — sin(π) с 10 парами (должно быть ≈0).
+    """
+    S = pow_b10k(_from_int(BASE), _from_int(2 * (pairs + 1)))
+    fp = x.frac_pairs if hasattr(x, 'frac_pairs') and x.frac_pairs else 0
+
+    # x_scaled = x_val · S
+    x_times_S = mul(x, S)
+    if fp > 0:
+        x_scaled = B10K(sign=x.sign,
+                        digs=_shift_right_abs(x_times_S.digs, 2 * fp))
+    else:
+        x_scaled = x_times_S
+
+    if _is_zero(x_scaled):
+        return B10K(sign=1, digs=[0], frac_pairs=pairs)
+
+    # x_sq = x_val² — при fp>0 масштаб BASE^(4·fp)
+    x_sq = mul(x, x)
+
+    result = _zero()
+    term = x_scaled  # k=1: x · S
+    k = 1
+
+    while True:
+        result = add(result, term)
+
+        # term_{k+1} = −term_k · x² / ((2k)(2k+1))
+        temp = mul(term, x_sq)   # scale: S × BASE^(4·fp)
+        if _is_zero(temp):
+            break
+        temp = neg(temp)
+        temp = B10K(sign=temp.sign,
+                    digs=_div_small_abs(temp.digs, 2 * k))
+        temp = B10K(sign=temp.sign,
+                    digs=_div_small_abs(temp.digs, 2 * k + 1))
+        # Деление на масштаб x_sq, если x дробный
+        if fp > 0:
+            temp = B10K(sign=temp.sign,
+                        digs=_shift_right_abs(temp.digs, 4 * fp))
+        term = temp
+        k += 1
+
+        if _is_zero(term):
+            break
+
+    # Отбросить запасную пару
+    result = B10K(sign=result.sign,
+                  digs=_shift_right_abs(result.digs, 2),
+                  frac_pairs=pairs)
+    if not result.digs:
+        result = B10K(sign=1, digs=[0], frac_pairs=pairs)
+    return result
+
+
+def cos_b10k(x: B10K, pairs: int = 10) -> B10K:
+    """cos(x) с точностью до `pairs` дробных пар.
+
+    Ряд Тейлора  cos(x) = 1 − x²/2! + x⁴/4! − x⁶/6! + …
+    """
+    S = pow_b10k(_from_int(BASE), _from_int(2 * (pairs + 1)))
+    fp = x.frac_pairs if hasattr(x, 'frac_pairs') and x.frac_pairs else 0
+
+    # x_scaled = x_val · S
+    x_times_S = mul(x, S)
+    if fp > 0:
+        x_scaled = B10K(sign=x.sign,
+                        digs=_shift_right_abs(x_times_S.digs, 2 * fp))
+    else:
+        x_scaled = x_times_S
+
+    # x_sq = x_val²
+    x_sq = mul(x, x)
+
+    if _is_zero(x_scaled):
+        # cos(0) = 1  →  результат = 1 × S, отбрасываем запасную пару
+        return B10K(sign=1, digs=_shift_right_abs(list(S.digs), 2),
+                    frac_pairs=pairs)
+
+    result = _zero()
+    # k=0: 1 × S (единица в масштабе S)
+    term = B10K(sign=1, digs=list(S.digs))
+    k = 1
+
+    while True:
+        result = add(result, term)
+
+        # term_{k+1} = −term_k · x² / ((2k−1)(2k))
+        temp = mul(term, x_sq)
+        if _is_zero(temp):
+            break
+        temp = neg(temp)
+        temp = B10K(sign=temp.sign,
+                    digs=_div_small_abs(temp.digs, 2 * k - 1))
+        temp = B10K(sign=temp.sign,
+                    digs=_div_small_abs(temp.digs, 2 * k))
+        if fp > 0:
+            temp = B10K(sign=temp.sign,
+                        digs=_shift_right_abs(temp.digs, 4 * fp))
+        term = temp
+        k += 1
+
+        if _is_zero(term):
+            break
+
+    result = B10K(sign=result.sign,
+                  digs=_shift_right_abs(result.digs, 2),
+                  frac_pairs=pairs)
+    if not result.digs:
+        result = B10K(sign=1, digs=[0], frac_pairs=pairs)
     return result
 
 
