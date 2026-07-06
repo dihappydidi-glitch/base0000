@@ -723,16 +723,50 @@ def to_int(a: B10K) -> int:
     return n * a.sign
 
 
-def to_dec(a: B10K) -> str:
-    """B10K → десятичная строка (для целых чисел).
+def to_dec(a: B10K, frac_pairs: int = 0) -> str:
+    """B10K → десятичная строка с точкой для дробных.
 
-    Пример: to_dec(B("0000:0120")) → "120"
-            to_dec(B("9999.9999:0000.0000")) → "9999000099990000"
+    Параметры:
+      a — B10K число.
+      frac_pairs — число дробных пар (8 десятичных цифр на пару).
+                   Если > 0, последние 2*frac_pairs LE-элементов — дробная часть,
+                   ставится десятичная точка.
+
+    Примеры:
+      to_dec(B("0000:0120"))                  → "120"
+      to_dec(pi_b10k(4), frac_pairs=4)         → "3.14159265358979323846264338327950"
+      to_dec(B("-0000:0003"))                  → "-3"
+      to_dec(B("-0001:0000"))                  → "-10000"
     """
     if _is_zero(a):
+        if frac_pairs > 0:
+            return f"-0.{'0' * (8 * frac_pairs)}" if a.sign == -1 else f"0.{'0' * (8 * frac_pairs)}"
         return "0"
-    n = sum(d * (BASE ** i) for i, d in enumerate(a.digs))
-    s = str(n)
+
+    digs = a.digs
+
+    if frac_pairs > 0:
+        n_frac = 2 * frac_pairs
+        # LE: младшие элементы = дробная часть, старшие = целая
+        frac_digs = digs[:n_frac]
+        int_digs = digs[n_frac:]
+
+        # Целая часть
+        if int_digs:
+            int_n = sum(d * (BASE ** i) for i, d in enumerate(int_digs))
+            int_str = str(int_n)
+        else:
+            int_str = "0"
+
+        # Дробная часть — каждая пара даёт 8 десятичных цифр
+        frac_n = sum(d * (BASE ** i) for i, d in enumerate(frac_digs))
+        frac_str = str(frac_n).zfill(8 * frac_pairs)
+
+        s = f"{int_str}.{frac_str}"
+    else:
+        n = sum(d * (BASE ** i) for i, d in enumerate(digs))
+        s = str(n)
+
     return f"-{s}" if a.sign == -1 else s
 
 
@@ -902,8 +936,9 @@ def _repl():
     print("=== base-10000 REPL ===")
     print("Вводите выражения вида:  0000:0005 + 0000:0003")
     print("Поддерживается: + - * / % ** //")
-    print("Функции: fact(n)  gcd(a,b)  lcm(a,b)  isqrt(n)  tod(n)  pi(pairs)")
+    print("Функции: fact(n)  gcd(a,b)  lcm(a,b)  isqrt(n)  tod(n [,pairs])  pi(pairs)")
     print("  pi(10) — π с 10 парами цифр (80 десятичных); pi() — 10 пар")
+    print("  tod(x) — десятичная строка; tod(x, 4) — с дробной точкой (4 пары)")
     print("Переменные: обозначаются буквами, сохраняются через =")
     print("  x = 0000:0100")
     print("  x * x")
@@ -971,7 +1006,14 @@ def _repl():
             elif func_name == 'isqrt':
                 result = isqrt(args[0])
             elif func_name in ('tod', 'to_dec'):
-                result = to_dec(args[0])
+                # tod(x) или tod(x, pairs)
+                if len(args) == 1:
+                    result = to_dec(args[0])
+                elif len(args) == 2:
+                    result = to_dec(args[0], frac_pairs=to_int(args[1]))
+                else:
+                    print("  tod(x [, pairs]) — конвертация B10K в десятичную строку")
+                    return None
                 print(f"  {result}")
                 return None
             elif func_name == 'pi':
