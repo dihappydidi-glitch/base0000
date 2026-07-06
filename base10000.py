@@ -841,16 +841,18 @@ def format_frac(a: B10K, frac_pairs: int, comma_in_left: bool = True) -> str:
 
     if n_frac_le >= n_le:
         # Целая часть = 0, всё число — дробное
-        int_val = 0
+        int_format = "0"
         pad = [0] * (n_frac_le - n_le)
         frac_digs_rev = list(reversed(pad + a.digs))
     else:
         int_digs = a.digs[n_frac_le:]
         frac_digs = a.digs[:n_frac_le]
 
-        int_val = _b10k_to_int(B10K(1, int_digs)) * a.sign
-        if int_val < 0:
-            int_val = -int_val
+        # Целая часть: B10K-группы (BE, 4 цифры, через точку)
+        int_be = list(reversed(int_digs))
+        int_format = '.'.join(f"{g:04d}" for g in int_be)
+        if int_format == "0000":
+            int_format = "0"
 
         frac_digs_rev = list(reversed(frac_digs))
 
@@ -883,9 +885,9 @@ def format_frac(a: B10K, frac_pairs: int, comma_in_left: bool = True) -> str:
     sign_str = "-" if a.sign == -1 else ""
 
     if comma_in_left:
-        return f"{sign_str}{int_val},{left_str}:{right_str}"
+        return f"{sign_str}{int_format},{left_str}:{right_str}"
     else:
-        return f"{sign_str}{left_str}:{int_val},{right_str}"
+        return f"{sign_str}{left_str}:{int_format},{right_str}"
 
 
 # ─── короткие псевдонимы ──────────────────────────────────
