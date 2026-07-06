@@ -8,6 +8,12 @@
 !/.gitignore
 !/.gitattributes
 !/README.md
+!/pyproject.toml
+!/LICENSE
+!/src/
+!/src/b10k/
+!/src/b10k/__init__.py
+!/src/b10k/py.typed
 
 # Still ignore common junk
 NTUSER.DAT*
@@ -16,3 +22,8 @@ NTUSER.DAT*
 *.TMContainer*
 __pycache__/
 *.py[cod]
+
+# Build artifacts (already ignored by /*, explicit for safety)
+dist/
+*.egg-info/
+build/

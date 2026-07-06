@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "b10k"
+version = "0.2.0"
+description = "Decimal arbitrary-precision arithmetic library (base-10000)"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.8"
+keywords = ["bignum", "arbitrary-precision", "decimal", "base-10000", "arithmetic"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+urls = { Homepage = "https://github.com/dihappydidi-glitch/base0000", Source = "https://github.com/dihappydidi-glitch/base0000" }
+
+[project.optional-dependencies]
+repl = ["prompt_toolkit"]
+
+[project.scripts]
+b10k-repl = "b10k:main_repl"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["b10k*"]
+
+[tool.setuptools.package-data]
+b10k = ["py.typed"]
