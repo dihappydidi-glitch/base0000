@@ -1,4 +1,4 @@
-# base0000 — Base-10000 Numeral System (B10K)
+# base10000 (B10K) — Base-10000 Numeral System
 
 A system for representing and computing **arbitrarily large decimal numbers** without conversion to machine `int`. All operations work digit-by-digit on arrays of 0…9999, allowing numbers of any length — millions and billions of digits, limited only by memory.
 
@@ -43,8 +43,9 @@ Supports both **integer** and **fractional** numbers with arbitrary precision.
 
 Rules:
 - Each group is exactly 4 decimal digits with leading zeros
-- Left and right halves have **the same number of groups**
+- Left and right halves always have **the same number of groups** — if the left half has fewer, `0000` groups are prepended at the MSB end
 - Minimum representation — one pair `0000:0000` (zero)
+- The MSB (leftmost) R-group is never zero (except single-pair numbers like `0000:0005`)
 
 ### Fractional Numbers
 
@@ -110,15 +111,15 @@ fractional_part = 0.s'      # interpret as decimal fraction
 
 B10K stores the fractional part **not as a sum of powers of 10000**, but as **decimal digits** split into 4-digit groups and interleaved between left and right halves.
 
-**Formatting algorithm (number → B10K string):**
+**Formatting algorithm (internal → B10K string):**
 
-```
-LE digits → reverse to BE
-→ if odd number of BE groups, prepend 0000
-→ BE[even] → left half
-→ BE[odd] → right half
-→ join: left_half : right_half
-```
+LE array is traversed from the **MSB end** (rightmost index) to the LSB:
+
+1. If the number of LE elements is odd — the MSB element is an R-group (odd index in BE → right half)
+2. Remaining elements are collected in pairs: **(L, R)** from each 2-element segment, MSB→LSB
+3. If more R-groups than L-groups were collected, `"0000"` groups are **prepended** to the left half (MSB end) to equalize counts
+4. Groups are formatted as 4-digit zero-padded strings
+5. Result: `L₀.L₁… : R₀.R₁…`
 
 ### Direction of Processing: "from the end, least significant first"
 
@@ -859,27 +860,27 @@ Every result can be verified **digit by digit** without writing additional code:
 B10K computes π with any precision — no double/float limits:
 
 ```
-π = 0000.1592.8979.4626.3279.8419
-        3993.5820.4459.8164.6208.2803
-        3421.7982.8651.3066.3844.5058
-        7253.8128.1745.1027.8521.5964
-        9489.0381.2881.6659.6128.4823
-        7831.1201.4564.9234.8610.2664
-        3936.0249.7372.0066.5588.8152
-        9628.4091.6436.5903.1330.4882
-        5213.6951.1160.0572.5759
-  :03,14.6535.3238.4338.5028.7169
-   7510.9749.2307.0628.9986.4825
-   1706.1480.3282.4709.6095.2231
-   5940.4811.0284.0193.1055.4622
-   5493.9644.0975.3344.4756.3786
-   6527.9091.8566.6034.4543.8213
-   0726.1412.4587.0631.1748.0920
-   2925.7153.7892.6001.5305.0466
-   8414.9415.9433.7036.5919
+π = 0000.1415.3589.3846.3832.2884.6939
+        1058.4944.0781.2862.8628.2534
+        0679.8086.8230.0938.9550.3172
+        4081.1117.8410.9385.5559.2294
+        9303.4428.7566.4461.5648.8678
+        2712.9145.6692.3486.4326.1339
+        2602.1273.8700.3155.4881.2096
+        2540.5364.9259.0113.0548.6652
+        1469.1511.3305.3657.1953.8611
+  :0003,.9265.7932.2643.7950.1971.9375
+   2097.5923.6406.0899.0348.2117
+   8214.5132.6647.4460.5822.5359
+   2848.4502.2701.2110.6446.8954
+   8196.8109.5933.2847.2337.3165
+   0190.6485.3460.1045.6482.3607
+   4914.7245.6606.8817.5209.2829
+   9171.3678.0360.3053.8204.1384
+   5194.6094.7270.5959.0921.7381
 ```
 
-(418 decimal digits after the comma. Computed using the Gauss-Legendre algorithm. The integer part `03` is in the right half; the left half starts with `0000` — honest representation of the first incomplete 8-digit chunk alignment.)
+(432 decimal digits. Computed via Machin's formula: π = 16·arctan(1/5) − 4·arctan(1/239). The integer part `0003` is in the right half; the left half starts with `0000` — first-chunk alignment.)
 
 ---
 
@@ -1041,7 +1042,7 @@ B10K is a fully open-source project. If you find it useful, you can support its 
 | **BTC** | `bc1qurndehxsac9mk4ax3fdrt7hx7zn9va7gf5lusz` | Trust Wallet / any BTC wallet |
 
 **Telegram:** https://t.me/base10000  
-**Boosty (RF cards):** https://boosty.to/base0000  
+**Boosty (RF cards):** https://boosty.to/base10000  
   First post: https://boosty.to/base0000/posts/567d5fd0-2ad5-4e8d-ab38-1e8a11990a6d
 
 One of the ideas behind B10K is that financial calculations should be accurate, free from rounding errors. Your support makes this approach more accessible 🙌
