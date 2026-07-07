@@ -431,7 +431,8 @@ def mul(a: B10K, b: B10K) -> B10K:
     return result
 
 
-def div_mod(a: B10K, b: B10K, force_fraction: bool = False) -> Tuple[B10K, B10K]:
+def div_mod(a: B10K, b: B10K, force_fraction: bool = False,
+            precision: int = 0) -> Tuple[B10K, B10K]:
     """
     Целочисленное деление с остатком (Euclidean division).
     Всегда: a = q * b + r, где 0 <= r < |b|.
@@ -440,6 +441,9 @@ def div_mod(a: B10K, b: B10K, force_fraction: bool = False) -> Tuple[B10K, B10K]
     остаток превращается в дробные разряды результата (деление в десятичном формате):
     остаток умножается на BASE^(2*fp) и делится на b, результат дописывается
     к частному со стороны LSB.
+
+    Параметры:
+      precision — число дробных пар для расширения (0 = авто).
     """
     if _is_zero(b):
         raise ZeroDivisionError("деление на ноль")
@@ -452,9 +456,10 @@ def div_mod(a: B10K, b: B10K, force_fraction: bool = False) -> Tuple[B10K, B10K]
     # Правило: дополнять на количество разрядов делителя
     # (чтобы x / b * b ≈ x в десятичной арифметике).
     if force_fraction or (r_digs != [0] and a.frac_pairs > 0):
-        # Если делимое целое (force_fraction), дробных пар = количество
-        # ВСЕХ разрядов делителя (целые + дробные LE-элементы).
-        if a.frac_pairs == 0 and force_fraction:
+        if precision > 0:
+            extra_pairs = precision
+            ext_len = extra_pairs * 2
+        elif a.frac_pairs == 0 and force_fraction:
             extra_pairs = len(b.digs) + 2 * b.frac_pairs
             ext_len = extra_pairs * 2
         else:
@@ -512,13 +517,17 @@ def div(a: B10K, b: B10K) -> B10K:
     return div_mod(a, b)[0]
 
 
-def truediv(a: B10K, b: B10K) -> B10K:
-    """Деление с дробной частью (остаток → дробные разряды)."""
+def truediv(a: B10K, b: B10K, precision: int = 0) -> B10K:
+    """Деление с дробной частью (остаток → дробные разряды).
+
+    Параметры:
+      precision — число дробных пар (0 = авто, 8 = 64 десятичных цифры).
+    """
     if _is_zero(b):
         raise ZeroDivisionError("деление на ноль")
     if _is_zero(a):
         return _zero()
-    q, _ = div_mod(a, b, force_fraction=True)
+    q, _ = div_mod(a, b, force_fraction=True, precision=precision)
     return q
 
 
@@ -1168,16 +1177,15 @@ def format_frac(a: B10K, frac_pairs: int) -> str:
     # L-групп может быть меньше — дополняем нулями спереди (MSB-конец)
     if len(int_R) > len(int_L):
         int_L = ["0000"] * (len(int_R) - len(int_L)) + int_L
+    # Дополняем целую часть до 8 L/R групп (для читаемости)
+    MIN_INT_GROUPS = 8
+    if len(int_L) < MIN_INT_GROUPS:
+        pad_cnt = MIN_INT_GROUPS - len(int_L)
+        int_L = ["0000"] * pad_cnt + int_L
+        int_R = ["0000"] * pad_cnt + int_R
 
-    # Отбрасываем хвостовые (MSB-конец) полностью нулевые пары — артефакты арифметики.
-    # НЕ отбрасываем, если задана точная длина десятичной дроби (frac_len),
-    # т.е. количество пар явно запрошено (например, при делении целого числа).
-    while frac_R and frac_R[-1] == "0000" and frac_L[-1] == "0000":
-        if a.frac_len and 2 * (frac_pairs - 1) * 4 < a.frac_len:
-            break  # если убрать эту пару, длина станет меньше frac_len — стоп
-        frac_R.pop()
-        frac_L.pop()
-        frac_pairs -= 1
+    # НЕ отбрасываем хвостовые нулевые пары — показываем все frac_pairs.
+    # (снято ограничение: больше не скрываем точность арифметики)
 
     if frac_pairs <= 0 or not frac_R:
         # После отбрасывания дробная часть исчезла — целое число
