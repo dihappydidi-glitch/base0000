@@ -1040,6 +1040,20 @@ def to_dec(a: B10K, frac_pairs: Optional[int] = None) -> str:
         frac_digs = digs[:n_frac]
         int_digs = digs[n_frac:]
 
+        # Отбрасываем LSB-нулевые пары (хвостовые нули в десятичной строке)
+        while len(frac_digs) >= 2 and frac_digs[:2] == [0, 0]:
+            frac_digs = frac_digs[2:]
+            frac_pairs -= 1
+        # Отбрасываем MSB-нулевые пары (ведущие нули в десятичной строке)
+        while len(frac_digs) >= 2 and frac_digs[-2:] == [0, 0]:
+            frac_digs = frac_digs[:-2]
+            frac_pairs -= 1
+
+        if frac_pairs <= 0 or not frac_digs or all(d == 0 for d in frac_digs):
+            # После отбрасывания дробная часть исчезла — целое число
+            s = _digs_to_dec(int_digs) if int_digs else "0"
+            return f"-{s}" if a.sign == -1 else s
+
         # Целая часть
         if int_digs:
             int_str = _digs_to_dec(int_digs)
