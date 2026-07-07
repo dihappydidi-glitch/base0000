@@ -6,6 +6,93 @@ Supports both **integer** and **fractional** numbers with arbitrary precision.
 
 ---
 
+## How a B10K Number Is Formed from Decimal Digits
+
+Every B10K number is built from **pairs** of 4‑digit groups (0…9999). Each pair holds 8
+decimal digits. Pairs are stored **little‑endian** (least significant first) and displayed
+**big‑endian** (most significant first) in two halves separated by a colon.
+
+### Algorithm: Decimal → B10K
+
+```
+decimal:  12345678901234567890
+```
+
+**Step 1.** Process the decimal digits **right‑to‑left** in 8‑digit chunks.
+Left‑pad the most‑significant chunk with zeros to 8 digits.
+
+```
+chunk 0 (LSB):  34567890
+chunk 1:        12345678
+chunk 2 (MSB):  00000012   ← padded to 8 digits
+```
+
+**Step 2.** Split each 8‑digit chunk into two 4‑digit groups:
+**left** (first 4 digits) and **right** (last 4 digits).
+
+| Chunk | 8 digits | Left group | Right group |
+|-------|----------|------------|-------------|
+| 0     | 34567890 | 3456       | 7890        |
+| 1     | 12345678 | 1234       | 5678        |
+| 2     | 00000012 | 0000       | 0012        |
+
+**Step 3.** Store as little‑endian array `digs = [R₀, L₀, R₁, L₁, …]`:
+
+```
+digs = [7890, 3456, 5678, 1234, 12, 0]
+```
+
+The value in decimal is:
+
+```
+value = 7890 + 3456·10000 + 5678·10000² + 1234·10000³ + 12·10000⁴
+     = 12,345,678,901,234,567,890
+```
+
+**Step 4.** Display as **L₀.L₁… : R₀.R₁…** (MSB to LSB):
+
+```
+Left half:  0000 . 1234 . 3456
+Right half: 0012 . 5678 . 7890
+
+Full B10K:  0000.1234.3456:0012.5678.7890
+```
+
+### Simpler examples
+
+| Decimal | 8‑digit chunks (right→left) | L / R groups | LE array `digs` | B10K string |
+|---------|------------------------------|--------------|-----------------|-------------|
+| 42 | 00000042 | L=0000, R=0042 | `[42, 0]` | `0000:0042` |
+| 10,000 | 00010000 | L=0001, R=0000 | `[0, 1]` | `0001:0000` |
+| 99,999,999 | 99999999 | L=9999, R=9999 | `[9999, 9999]` | `9999:9999` |
+| 100,000,000 | 00010000 00000000 | L₁=0001,R₁=0000, L₀=0000,R₀=0000 | `[0, 0, 0, 1]` | `0000.0000:0001.0000` |
+
+### Fractional numbers
+
+Fractions follow the same pair model — the digits after the decimal point are grouped
+right‑to‑left into 8‑digit chunks, each producing one (L, R) pair. The full B10K adds a
+comma (`,`) to separate the integer part from the fractional part:
+
+```
+Example:  √45 ≈ 6.7082039324993690892275210061938…
+
+Fractional digits (right‑to‑left in 8‑digit chunks):
+  10061938 → L=1006, R=1938   (pair 4)
+  08922752 → L=0892, R=2752   (pair 3)
+  32499369 → L=3249, R=9369   (pair 2)
+  07082039 → L=0708, R=2039   (pair 1, padded to 8)
+
+B10K display:  6,708.3249.0892.1006:2039.9369.2752.1938
+               │ └─ fractional L‑groups ─┘ └─ fractional R‑groups ─┘
+               │   left half                    right half
+               └── integer part (6 + first L‑group 708 = "6,708")
+```
+
+The integer (non‑fractional) part on each side is padded to 8 groups with `0000` for
+readability (automatic in `format_frac`).
+
+---
+
 ## Table of Contents
 
 - [Number Format](#number-format)
