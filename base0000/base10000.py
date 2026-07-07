@@ -1141,10 +1141,25 @@ def format_frac(a: B10K, frac_pairs: int) -> str:
     if frac_L:
         L_str += "." + ".".join(frac_L)
 
-    # R side: int_R первым, затем запятая+точка, затем дробные R-группы
+    # R side: int_R первым, затем ,. + дробные R-группы.
+    # Хвостовые нулевые пары (L и R обе 0000) — отдельным блоком ,.0000
     R_str = ".".join(int_R) if int_R else "0000"
     if frac_R:
-        R_str += ",." + ".".join(frac_R)
+        n_zero = 0
+        for i in range(len(frac_R) - 1, -1, -1):
+            if frac_R[i] == "0000" and i < len(frac_L) and frac_L[i] == "0000":
+                n_zero += 1
+            else:
+                break
+        if n_zero > 0:
+            n_main = len(frac_R) - n_zero
+            main = ".".join(frac_R[:n_main])
+            if main:
+                R_str += ",." + main
+            for j in range(n_main, len(frac_R)):
+                R_str += ",." + frac_R[j]
+        else:
+            R_str += ",." + ".".join(frac_R)
 
     return f"{sign_str}{L_str}:{R_str}"
 
