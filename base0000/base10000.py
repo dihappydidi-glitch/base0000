@@ -750,7 +750,7 @@ def _parse_frac(s: str, sign: int) -> B10K:
             frac_le = _trim(frac_le) if frac_le else [0]
             combined = _shift_left_abs(int_b10k.digs, 2 * n)
             combined = _add_abs(combined, frac_le)
-            return B10K(sign=sign, digs=combined)
+            return B10K(sign=sign, digs=combined, frac_pairs=n)
 
         # Старый формат: дробь_левая:целая,дробь_правая (запятая справа)
         # или новый формат: int_L.frac_L: int_R,.frac_R
@@ -786,7 +786,7 @@ def _parse_frac(s: str, sign: int) -> B10K:
         frac_le = _trim(frac_le) if frac_le else [0]
         combined = _shift_left_abs(int_b10k.digs, 2 * n)
         combined = _add_abs(combined, frac_le)
-        return B10K(sign=sign, digs=combined)
+        return B10K(sign=sign, digs=combined, frac_pairs=n)
 
     # НОВЫЙ ФОРМАТ: int_part, L0.R0.L1.R1.L2.R2...
     comma_pos = s.index(',')
@@ -822,7 +822,7 @@ def _parse_frac(s: str, sign: int) -> B10K:
     frac_le = _trim(frac_le) if frac_le else [0]
     combined = _shift_left_abs(int_b10k.digs, 2 * n)
     combined = _add_abs(combined, frac_le)
-    return B10K(sign=sign, digs=combined)
+    return B10K(sign=sign, digs=combined, frac_pairs=n_pairs)
 
 
 def format_num(a: B10K, frac_pairs: int = 0) -> str:
@@ -1166,6 +1166,7 @@ def _repl():
     print("  tan(x, pairs) — тангенс; atan(x, pairs) — арктангенс")
     print("  exp(x, pairs) — e^x; ln(x, pairs) — натуральный логарифм")
     print("  log(x, pairs) — десятичный логарифм")
+    print("  pct(val, pct [,pairs]) — pct% от числа (val × pct / 100)")
     print("Переменные: обозначаются буквами, сохраняются через =")
     print("  x = 0000:0100")
     print("  x * x")
@@ -1373,6 +1374,14 @@ def _repl():
                     result = log10_b10k(args[0], to_int(args[1]))
                 else:
                     print("  log(x [, pairs]) — десятичный логарифм")
+                    return None
+            elif func_name == 'pct':
+                if len(args) == 2:
+                    result = pct(args[0], args[1])
+                elif len(args) == 3:
+                    result = pct(args[0], args[1], to_int(args[2]))
+                else:
+                    print("  pct(value, percent [, pairs]) — процент от числа")
                     return None
             else:
                 print(f"  неизвестная функция: {func_name}")
@@ -1900,6 +1909,27 @@ def _ln_via_series(x: B10K, pairs: int) -> B10K:
     if not result.digs:
         result = B10K(sign=1, digs=[0], frac_pairs=pairs)
     return result
+
+
+def pct(value: B10K, percent: B10K, pairs: int = 0) -> B10K:
+    """Процент от числа: value × percent / 100.
+
+    Примеры:
+      pct(B("0000:0042"), B("0000:0015"))     → B("0000:0006")   (= 6, 15% от 42)
+      pct(B("0000:0042"), B("0000:0015"), 2)  → 6.30  (c двумя дробными парами)
+
+    Алгоритм: value × percent (точно), затем /100 с расширением точности.
+    """
+    if _is_zero(value) or _is_zero(percent):
+        return _zero()
+    # Точное произведение
+    prod = mul(value, percent)
+    # Расширяем точность для деления на 100
+    shift = 2 * pairs
+    shifted = _shift_left_abs(prod.digs, shift)
+    # 100 < BASE — делим через _div_small_abs (O(n))
+    divided = _div_small_abs(shifted, 100)
+    return B10K(sign=prod.sign, digs=divided, frac_pairs=prod.frac_pairs + pairs)
 
 
 def log10_b10k(x: B10K, pairs: int = 10) -> B10K:
