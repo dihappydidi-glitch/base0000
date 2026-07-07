@@ -804,7 +804,7 @@ def _parse_frac(s: str, sign: int) -> B10K:
         # Нет точек — обычный десятичный хвост, разбиваем на 4-циферные группы
         pad = (4 - len(frac_str) % 4) % 4
         if pad:
-            frac_str = '0' * pad + frac_str
+            frac_str = frac_str + '0' * pad  # паддинг справа — не меняет значение
         groups = [frac_str[i:i+4] for i in range(0, len(frac_str), 4)]
     if not groups:
         return int_b10k
