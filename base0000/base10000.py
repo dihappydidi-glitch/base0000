@@ -1169,8 +1169,8 @@ def format_frac(a: B10K, frac_pairs: int) -> str:
             main = ".".join(frac_R[:n_main])
             if main:
                 R_str += ",." + main
-            for j in range(n_main, len(frac_R)):
-                R_str += ",." + frac_R[j]
+            # Все хвостовые R=0000 — одним блоком ,.0000.0000...
+            R_str += ",." + ".".join(frac_R[n_main:])
         else:
             R_str += ",." + ".".join(frac_R)
 
