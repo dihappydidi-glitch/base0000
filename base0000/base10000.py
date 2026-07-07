@@ -922,7 +922,8 @@ def _parse_frac(s: str, sign: int) -> B10K:
     return B10K(sign=sign, digs=combined, frac_pairs=n_pairs, frac_len=frac_len)
 
 
-def format_num(a: B10K, frac_pairs: int = 0) -> str:
+def format_num(a: B10K, frac_pairs: int = 0,
+               min_tail_zero_pairs: int = 0) -> str:
     """
     B10K → строка (переплетающаяся модель).
 
@@ -930,6 +931,9 @@ def format_num(a: B10K, frac_pairs: int = 0) -> str:
     используется a.frac_pairs.
     При frac_pairs > 0: выделяет указанное число дробных пар (2×frac_pairs
     LE-элементов как младшие разряды) и форматирует с запятой.
+
+    Параметры:
+      min_tail_zero_pairs — минимум хвостовых нулевых пар (см. format_frac).
 
     Формат (целое): L₀.L₁...:R₀.R₁...
       Пример: 0000:0005
@@ -939,7 +943,7 @@ def format_num(a: B10K, frac_pairs: int = 0) -> str:
     """
     fp = frac_pairs or a.frac_pairs
     if fp > 0:
-        return format_frac(a, fp)
+        return format_frac(a, fp, min_tail_zero_pairs=min_tail_zero_pairs)
     if _is_zero(a):
         return "0000:0000"
 
@@ -1126,7 +1130,8 @@ def to_dec(a: B10K, frac_pairs: Optional[int] = None) -> str:
 _b10k_to_int = to_int  # обратная совместимость
 
 
-def format_frac(a: B10K, frac_pairs: int) -> str:
+def format_frac(a: B10K, frac_pairs: int,
+                min_tail_zero_pairs: int = 0) -> str:
     """
     B10K → строка с дробной частью.
 
@@ -1136,6 +1141,10 @@ def format_frac(a: B10K, frac_pairs: int) -> str:
     Запятая между целой R-группой и дробными R-группами.
 
     Пример: 0000.1415.3589.3846.3832:0003,.9265.7932.2643.7950  (π, 4 пары)
+
+    Параметры:
+      min_tail_zero_pairs — минимум хвостовых нулевых пар после отбрасывания
+        (0 = отбрасывать все, 1 = оставить одну 0000.0000, и т.д.)
 
     Для дроби: digs[:2*frac_pairs] хранятся как [Rₙ₋₁, Lₙ₋₁, …, R₀, L₀]
     (MSB→LSB pair в LE из-за переворота интерливинга).
@@ -1184,10 +1193,14 @@ def format_frac(a: B10K, frac_pairs: int) -> str:
         int_L = ["0000"] * pad_cnt + int_L
         int_R = ["0000"] * pad_cnt + int_R
 
-    # НЕ отбрасываем хвостовые нулевые пары — показываем все frac_pairs.
-    # (снято ограничение: больше не скрываем точность арифметики)
+    # Отбрасываем хвостовые полностью нулевые пары (L+R = 0000:0000),
+    # но оставляем не менее min_tail_zero_pairs штук для читаемости.
+    keep = min_tail_zero_pairs
+    while len(frac_L) > keep and frac_L[-1] == "0000" and frac_R[-1] == "0000":
+        frac_L.pop()
+        frac_R.pop()
 
-    if frac_pairs <= 0 or not frac_R:
+    if not frac_R:
         # После отбрасывания дробная часть исчезла — целое число
         L_str = ".".join(int_L) if int_L else "0000"
         R_str = ".".join(int_R) if int_R else "0000"
