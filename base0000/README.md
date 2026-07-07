@@ -1186,6 +1186,8 @@ Additional functions:
 class B10K:
     sign: int       # 1 or -1
     digs: List[int] # little-endian digit array 0…9999
+    frac_pairs: int = 0  # number of fractional pairs (0 = integer)
+    frac_len: int = 0    # original decimal fraction string length (before padding)
 ```
 
 **Little-endian:** least significant digit at index 0.
@@ -1197,6 +1199,20 @@ value = digs[0] + digs[1]·10000 + digs[2]·10000² + … + digs[n-1]·10000ⁿ�
 **Trim:** array has no leading zeros (except zero: `[0]`).
 
 **Sign:** `sign = 1` for positive and zero, `sign = -1` for negative.
+
+**Fractional metadata:**
+- `frac_pairs` — number of fractional (L, R) pairs (each pair = 8 decimal digits). Set when parsing or creating a fractional B10K.
+- `frac_len` — length of the original decimal fraction string before any padding was applied. Used by `to_dec()` to strip trailing padding zeros, producing exact decimal output.
+
+### Fraction Parsing Detail
+
+When parsing a bare decimal fraction string (no dots), B10K:
+1. Right-pads the string to a multiple of 8 decimal digits (whole pairs)
+2. Splits into 4-digit groups
+3. Even-indexed groups (0, 2, 4, …) → L-groups, odd-indexed (1, 3, 5, …) → R-groups
+4. Stores `frac_len` = original unpadded length for exact `to_dec()` output
+
+The `to_dec()` function uses `frac_len` to strip trailing zeros added by padding, producing a clean decimal representation that matches the input.
 
 ### Module Architecture
 

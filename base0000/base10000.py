@@ -55,6 +55,7 @@ class B10K:
     sign: int
     digs: List[int]
     frac_pairs: int = 0
+    frac_len: int = 0  # длина исходной десятичной строки (без паддинга)
 
     # ── арифметические операторы ──────────────────────────
 
@@ -796,17 +797,21 @@ def _parse_frac(s: str, sign: int) -> B10K:
     # Целая часть
     int_val = int(int_part_str) if int_part_str else 0
     int_b10k = _from_int(int_val)
+    frac_len = 0  # длина исходной десятичной дроби (без паддинга)
 
     # Дробная часть: чередование L0, R0, L1, R1, ...
     if '.' in frac_str:
         groups = [g for g in frac_str.split('.') if g.strip()]
     else:
-        # Нет точек — обычный десятичный хвост, разбиваем на 4-циферные группы
-        pad = (4 - len(frac_str) % 4) % 4
-        if pad:
-            frac_str = frac_str + '0' * pad  # паддинг справа — не меняет значение
+        # Нет точек — обычный десятичный хвост
+        # Дополняем справа до кратного 8 (целое количество пар)
+        frac_len = len(frac_str)
+        pad8 = (8 - len(frac_str) % 8) % 8
+        if pad8:
+            frac_str = frac_str + '0' * pad8  # паддинг справа — не меняет значение
         groups = [frac_str[i:i+4] for i in range(0, len(frac_str), 4)]
     if not groups:
+        return int_b10k
         return int_b10k
 
     # Чётные индексы → L, нечётные → R
@@ -829,7 +834,7 @@ def _parse_frac(s: str, sign: int) -> B10K:
     frac_le = _trim(frac_le) if frac_le else [0]
     combined = _shift_left_abs(int_b10k.digs, 2 * n)
     combined = _add_abs(combined, frac_le)
-    return B10K(sign=sign, digs=combined, frac_pairs=n_pairs)
+    return B10K(sign=sign, digs=combined, frac_pairs=n_pairs, frac_len=frac_len)
 
 
 def format_num(a: B10K, frac_pairs: int = 0) -> str:
@@ -995,7 +1000,16 @@ def to_dec(a: B10K, frac_pairs: Optional[int] = None) -> str:
             int_str = "0"
 
         # Дробная часть — каждая пара даёт 8 десятичных цифр
-        frac_str = _digs_to_dec(frac_digs, 8 * frac_pairs)
+        frac_val = _digs_to_dec(frac_digs, 8 * frac_pairs)
+        # Если известна исходная длина дроби (без паддинга), убираем лишние хвостовые нули
+        if frac_pairs == a.frac_pairs and a.frac_len:
+            stripped = frac_val.rstrip("0")
+            if len(stripped) < a.frac_len:
+                frac_str = stripped.ljust(a.frac_len, "0")
+            else:
+                frac_str = stripped
+        else:
+            frac_str = frac_val
 
         s = f"{int_str}.{frac_str}"
     else:
