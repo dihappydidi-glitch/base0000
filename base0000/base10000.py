@@ -798,7 +798,14 @@ def _parse_frac(s: str, sign: int) -> B10K:
     int_b10k = _from_int(int_val)
 
     # Дробная часть: чередование L0, R0, L1, R1, ...
-    groups = [g for g in frac_str.split('.') if g.strip()]
+    if '.' in frac_str:
+        groups = [g for g in frac_str.split('.') if g.strip()]
+    else:
+        # Нет точек — обычный десятичный хвост, разбиваем на 4-циферные группы
+        pad = (4 - len(frac_str) % 4) % 4
+        if pad:
+            frac_str = '0' * pad + frac_str
+        groups = [frac_str[i:i+4] for i in range(0, len(frac_str), 4)]
     if not groups:
         return int_b10k
 
