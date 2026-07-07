@@ -482,16 +482,20 @@ def div_mod(a: B10K, b: B10K, force_fraction: bool = False) -> Tuple[B10K, B10K]
     q = B10K(sign=1 if a.sign == b.sign else -1, digs=q_digs)
     r = B10K(sign=a.sign, digs=_trim(r_digs))  # остаток = знак делимого
 
-    # Сохраняем дробность результата
+    # Сохраняем дробность результата.
+    # a.frac_pairs и b.frac_pairs влияют на масштаб: digs уже содержат
+    # множитель BASE^(2∗fp). При делении разность fp определяет,
+    # насколько масштаб сдвинут; extra_pairs — новые пары из остатка.
+    fp_delta = a.frac_pairs - b.frac_pairs
     if extended:
-        q.frac_pairs = a.frac_pairs + extra_pairs
+        q.frac_pairs = fp_delta + extra_pairs
         r.frac_pairs = a.frac_pairs
         # Если делимое было целым и мы расширили дробную часть —
         # запоминаем точную длину для to_dec
         if a.frac_pairs == 0 and force_fraction and extra_pairs:
             q.frac_len = 8 * extra_pairs
     else:
-        q.frac_pairs = a.frac_pairs
+        q.frac_pairs = fp_delta if fp_delta > 0 else 0
         r.frac_pairs = a.frac_pairs
 
     # Евклидова коррекция: 0 <= r < |b|
