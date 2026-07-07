@@ -1450,8 +1450,14 @@ def _repl():
                     line = line[1:]
                 line = line.strip()
                 # разбиваем на токены, сохраняя скобки
+                # ВАЖНО: запятая внутри B10K-числа (1,00010001) НЕ разбивается
+                # Запятая-разделитель аргументов (spaces around it) разбивается
+                import re as _re
                 tokens = line.replace('(', ' ( ').replace(')', ' ) ').replace('=', ' = ')
-                tokens = tokens.replace(',', ' , ')
+                # Разбиваем только запятые, у которых есть пробел рядом
+                # (аргументы функций), а не внутри B10K-дроби
+                tokens = _re.sub(r'(?<=\s),(?=\s)|(?<=\s),(?!\s)|(?<!\s),(?=\s)',
+                                 ' , ', tokens)
                 tokens = [t for t in tokens.split() if t]
 
                 result = eval_expr(tokens)
