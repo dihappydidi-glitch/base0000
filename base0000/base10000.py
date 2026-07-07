@@ -78,7 +78,7 @@ class B10K:
         return mul(self, other)
 
     def __truediv__(self, other: 'B10K') -> 'B10K':
-        return div(self, other)
+        return truediv(self, other)
 
     def __floordiv__(self, other: 'B10K') -> 'B10K':
         return div(self, other)
@@ -427,10 +427,11 @@ def mul(a: B10K, b: B10K) -> B10K:
     sign = 1 if a.sign == b.sign else -1
     result = B10K(sign=sign, digs=_mul_abs(a.digs, b.digs))
     result.frac_pairs = a.frac_pairs + b.frac_pairs
+    result.frac_len = (a.frac_len or 0) + (b.frac_len or 0)
     return result
 
 
-def div_mod(a: B10K, b: B10K) -> Tuple[B10K, B10K]:
+def div_mod(a: B10K, b: B10K, force_fraction: bool = False) -> Tuple[B10K, B10K]:
     """
     Целочисленное деление с остатком (Euclidean division).
     Всегда: a = q * b + r, где 0 <= r < |b|.
@@ -450,15 +451,21 @@ def div_mod(a: B10K, b: B10K) -> Tuple[B10K, B10K]:
     # Вычисляем, на сколько десятичных разрядов дополнить дробную часть.
     # Правило: дополнять на количество разрядов делителя
     # (чтобы x / b * b ≈ x в десятичной арифметике).
-    if r_digs != [0] and a.frac_pairs > 0:
-        # Сколько десятичных цифр в делителе |b|
-        b_len = _b10k_dec_digits(b.digs)
-        # В базе 10000 каждый LE-элемент = 4 десятичных цифры,
-        # а одна дробная пара = 2 LE-элемента = 8 десятичных цифр.
-        # Округляем ext_le до чётного числа.
-        ext_le = (b_len + 3) // 4           # ceil(b_len / 4)
-        ext_len = ext_le + (ext_le & 1)     # ближайшее чётное
-        extra_pairs = ext_len // 2
+    if force_fraction or (r_digs != [0] and a.frac_pairs > 0):
+        # Если делимое целое (force_fraction), дробных пар = количество
+        # ВСЕХ разрядов делителя (целые + дробные LE-элементы).
+        if a.frac_pairs == 0 and force_fraction:
+            extra_pairs = len(b.digs) + 2 * b.frac_pairs
+            ext_len = extra_pairs * 2
+        else:
+            # Сколько десятичных цифр в делителе |b|
+            b_len = _b10k_dec_digits(b.digs)
+            # В базе 10000 каждый LE-элемент = 4 десятичных цифры,
+            # а одна дробная пара = 2 LE-элемента = 8 десятичных цифр.
+            # Округляем ext_le до чётного числа.
+            ext_le = (b_len + 3) // 4           # ceil(b_len / 4)
+            ext_len = ext_le + (ext_le & 1)     # ближайшее чётное
+            extra_pairs = ext_len // 2
         ext_r = _shift_left_abs(r_digs, ext_len)
         frac_digs, _ = _div_mod_abs(ext_r, b.digs)
         # Гарантируем, что frac_digs ровно ext_len LE-цифр
@@ -479,6 +486,10 @@ def div_mod(a: B10K, b: B10K) -> Tuple[B10K, B10K]:
     if b.frac_pairs == 0:
         q.frac_pairs = a.frac_pairs + extra_pairs
         r.frac_pairs = a.frac_pairs
+        # Если делимое было целым и мы расширили дробную часть —
+        # запоминаем точную длину для to_dec (48 цифр = 6 пар)
+        if a.frac_pairs == 0 and force_fraction and extra_pairs:
+            q.frac_len = 8 * extra_pairs
 
     # Евклидова коррекция: 0 <= r < |b|
     if r.sign == -1 and not _is_zero(r):
@@ -490,7 +501,18 @@ def div_mod(a: B10K, b: B10K) -> Tuple[B10K, B10K]:
 
 
 def div(a: B10K, b: B10K) -> B10K:
+    """Целочисленное деление (без дробной части)."""
     return div_mod(a, b)[0]
+
+
+def truediv(a: B10K, b: B10K) -> B10K:
+    """Деление с дробной частью (остаток → дробные разряды)."""
+    if _is_zero(b):
+        raise ZeroDivisionError("деление на ноль")
+    if _is_zero(a):
+        return _zero()
+    q, _ = div_mod(a, b, force_fraction=True)
+    return q
 
 
 def mod(a: B10K, b: B10K) -> B10K:
@@ -1042,14 +1064,18 @@ def to_dec(a: B10K, frac_pairs: Optional[int] = None) -> str:
 
         # Отбрасываем LSB-нулевые пары (хвостовые нули в десятичной строке)
         while len(frac_digs) >= 2 and frac_digs[:2] == [0, 0]:
+            if a.frac_len and 2 * (frac_pairs - 1) * 4 < a.frac_len:
+                break
             frac_digs = frac_digs[2:]
             frac_pairs -= 1
         # Отбрасываем MSB-нулевые пары (ведущие нули в десятичной строке)
         while len(frac_digs) >= 2 and frac_digs[-2:] == [0, 0]:
+            if a.frac_len and 2 * (frac_pairs - 1) * 4 < a.frac_len:
+                break
             frac_digs = frac_digs[:-2]
             frac_pairs -= 1
 
-        if frac_pairs <= 0 or not frac_digs or all(d == 0 for d in frac_digs):
+        if frac_pairs <= 0 or not frac_digs or (all(d == 0 for d in frac_digs) and not a.frac_len):
             # После отбрасывания дробная часть исчезла — целое число
             s = _digs_to_dec(int_digs) if int_digs else "0"
             return f"-{s}" if a.sign == -1 else s
@@ -1062,8 +1088,10 @@ def to_dec(a: B10K, frac_pairs: Optional[int] = None) -> str:
 
         # Дробная часть — каждая пара даёт 8 десятичных цифр
         frac_val = _digs_to_dec(frac_digs, 8 * frac_pairs)
-        # Если известна исходная длина дроби (без паддинга), убираем лишние хвостовые нули
-        if frac_pairs == a.frac_pairs and a.frac_len:
+        # Если известна исходная длина десятичной дроби (frac_len),
+        # восстанавливаем нули до этой длины (хвостовые нули в младших разрядах).
+        # frac_len задаётся явно при парсинге или при делении целого числа.
+        if a.frac_len:
             stripped = frac_val.rstrip("0")
             if len(stripped) < a.frac_len:
                 frac_str = stripped.ljust(a.frac_len, "0")
@@ -1134,8 +1162,12 @@ def format_frac(a: B10K, frac_pairs: int) -> str:
     if len(int_R) > len(int_L):
         int_L = ["0000"] * (len(int_R) - len(int_L)) + int_L
 
-    # Отбрасываем хвостовые (MSB-конец) полностью нулевые пары — артефакты арифметики
+    # Отбрасываем хвостовые (MSB-конец) полностью нулевые пары — артефакты арифметики.
+    # НЕ отбрасываем, если задана точная длина десятичной дроби (frac_len),
+    # т.е. количество пар явно запрошено (например, при делении целого числа).
     while frac_R and frac_R[-1] == "0000" and frac_L[-1] == "0000":
+        if a.frac_len and 2 * (frac_pairs - 1) * 4 < a.frac_len:
+            break  # если убрать эту пару, длина станет меньше frac_len — стоп
         frac_R.pop()
         frac_L.pop()
         frac_pairs -= 1
@@ -1274,7 +1306,7 @@ def _repl():
         '-': op_mod.sub,
         '*': op_mod.mul,
         '//': op_mod.floordiv,
-        '/': op_mod.floordiv,
+        '/': op_mod.truediv,
         '%': op_mod.mod,
         '**': op_mod.pow,
     }
