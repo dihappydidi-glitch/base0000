@@ -1134,6 +1134,18 @@ def format_frac(a: B10K, frac_pairs: int) -> str:
     if len(int_R) > len(int_L):
         int_L = ["0000"] * (len(int_R) - len(int_L)) + int_L
 
+    # Отбрасываем хвостовые (MSB-конец) полностью нулевые пары — артефакты арифметики
+    while frac_R and frac_R[-1] == "0000" and frac_L[-1] == "0000":
+        frac_R.pop()
+        frac_L.pop()
+        frac_pairs -= 1
+
+    if frac_pairs <= 0 or not frac_R:
+        # После отбрасывания дробная часть исчезла — целое число
+        L_str = ".".join(int_L) if int_L else "0000"
+        R_str = ".".join(int_R) if int_R else "0000"
+        return f"{'-' if a.sign == -1 else ''}{L_str}:{R_str}"
+
     sign_str = "-" if a.sign == -1 else ""
 
     # L side: int_L первой, затем дробные L-группы, все разделены точками
