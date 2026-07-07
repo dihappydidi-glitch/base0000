@@ -1142,12 +1142,13 @@ def format_frac(a: B10K, frac_pairs: int) -> str:
         L_str += "." + ".".join(frac_L)
 
     # R side: int_R первым, затем ,. + дробные R-группы.
-    # Хвостовые нулевые пары (L и R обе 0000) — отдельным блоком ,.0000
+    # Хвостовые нулевые R-группы (0000 от лишних пар деления) — каждая
+    # своим блоком ,.0000 независимо от соответствующей L-группы.
     R_str = ".".join(int_R) if int_R else "0000"
     if frac_R:
         n_zero = 0
         for i in range(len(frac_R) - 1, -1, -1):
-            if frac_R[i] == "0000" and i < len(frac_L) and frac_L[i] == "0000":
+            if frac_R[i] == "0000":
                 n_zero += 1
             else:
                 break
