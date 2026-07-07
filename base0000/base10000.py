@@ -1067,7 +1067,7 @@ def format_frac(a: B10K, frac_pairs: int) -> str:
         L_str += "." + ".".join(frac_L)
 
     # R side: int_R первым, затем запятая+точка, затем дробные R-группы
-    R_str = ".".join(int_R) if int_R else "0"
+    R_str = ".".join(int_R) if int_R else "0000"
     if frac_R:
         R_str += ",." + ".".join(frac_R)
 
