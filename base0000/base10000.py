@@ -94,8 +94,17 @@ class B10K:
 
     # ── сравнения ─────────────────────────────────────────
 
+    def _norm(self, other: 'B10K') -> Tuple[List[int], List[int]]:
+        """Вернуть (self.digs, other.digs) в едином масштабе по frac_pairs."""
+        if self.frac_pairs == other.frac_pairs:
+            return self.digs, other.digs
+        diff = 2 * abs(self.frac_pairs - other.frac_pairs)
+        if self.frac_pairs > other.frac_pairs:
+            return self.digs, _shift_left_abs(other.digs, diff)
+        return _shift_left_abs(self.digs, diff), other.digs
+
     def __eq__(self, other: 'B10K') -> bool:
-        return self.sign == other.sign and _cmp_abs(self.digs, other.digs) == 0
+        return self.sign == other.sign and _cmp_abs(*self._norm(other)) == 0
 
     def __ne__(self, other: 'B10K') -> bool:
         return not (self == other)
@@ -103,7 +112,8 @@ class B10K:
     def __lt__(self, other: 'B10K') -> bool:
         if self.sign != other.sign:
             return self.sign < other.sign
-        c = _cmp_abs(self.digs, other.digs)
+        sd, od = self._norm(other)
+        c = _cmp_abs(sd, od)
         return (c < 0) if self.sign == 1 else (c > 0)
 
     def __le__(self, other: 'B10K') -> bool:
@@ -147,6 +157,14 @@ def _trim(digs: List[int]) -> List[int]:
 
 def _is_zero(a: B10K) -> bool:
     return all(d == 0 for d in a.digs)
+
+
+def _b10k_dec_digits(digs: List[int]) -> int:
+    """Количество десятичных цифр положительного B10K LE-числа."""
+    if not digs or (len(digs) == 1 and digs[0] == 0):
+        return 1
+    n = len(digs) - 1
+    return n * 4 + len(str(digs[-1]))
 
 
 def _cmp_abs(a: List[int], b: List[int]) -> int:
@@ -416,6 +434,11 @@ def div_mod(a: B10K, b: B10K) -> Tuple[B10K, B10K]:
     """
     Целочисленное деление с остатком (Euclidean division).
     Всегда: a = q * b + r, где 0 <= r < |b|.
+
+    Если a имеет дробные разряды (frac_pairs > 0) и есть ненулевой остаток,
+    остаток превращается в дробные разряды результата (деление в десятичном формате):
+    остаток умножается на BASE^(2*fp) и делится на b, результат дописывается
+    к частному со стороны LSB.
     """
     if _is_zero(b):
         raise ZeroDivisionError("деление на ноль")
@@ -424,13 +447,37 @@ def div_mod(a: B10K, b: B10K) -> Tuple[B10K, B10K]:
 
     q_digs, r_digs = _div_mod_abs(a.digs, b.digs)
 
+    # Вычисляем, на сколько десятичных разрядов дополнить дробную часть.
+    # Правило: дополнять на количество разрядов делителя
+    # (чтобы x / b * b ≈ x в десятичной арифметике).
+    if r_digs != [0] and a.frac_pairs > 0:
+        # Сколько десятичных цифр в делителе |b|
+        b_len = _b10k_dec_digits(b.digs)
+        # В базе 10000 каждый LE-элемент = 4 десятичных цифры,
+        # а одна дробная пара = 2 LE-элемента = 8 десятичных цифр.
+        # Округляем ext_le до чётного числа.
+        ext_le = (b_len + 3) // 4           # ceil(b_len / 4)
+        ext_len = ext_le + (ext_le & 1)     # ближайшее чётное
+        extra_pairs = ext_len // 2
+        ext_r = _shift_left_abs(r_digs, ext_len)
+        frac_digs, _ = _div_mod_abs(ext_r, b.digs)
+        # Гарантируем, что frac_digs ровно ext_len LE-цифр
+        while len(frac_digs) < ext_len:
+            frac_digs.append(0)
+        q_digs = _trim(frac_digs + q_digs)
+        r_digs = [0]
+        extended = True
+    else:
+        extended = False
+        extra_pairs = 0
+
     # усечённое деление (truncate toward zero)
     q = B10K(sign=1 if a.sign == b.sign else -1, digs=q_digs)
     r = B10K(sign=a.sign, digs=_trim(r_digs))  # остаток = знак делимого
 
     # Сохраняем дробность: если b — целое, результат сохраняет a.frac_pairs
     if b.frac_pairs == 0:
-        q.frac_pairs = a.frac_pairs
+        q.frac_pairs = a.frac_pairs + extra_pairs
         r.frac_pairs = a.frac_pairs
 
     # Евклидова коррекция: 0 <= r < |b|
